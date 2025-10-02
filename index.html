@@ -1,383 +1,358 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
-import { motion } from "framer-motion";
-import { DollarSign, TrendingUp, Users, Briefcase, Bell } from "lucide-react";
-import React from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Credit Stress Simulator — Single Company</title>
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Recharts (UMD) + React for simple charts -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
+  <!-- jsPDF & html2canvas for PDF export -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { background: #0b1220; }
+    .card { background:#111827; border-radius:16px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .muted { color:#9CA3AF; }
+    .accent { color:#60A5FA; }
+    .danger { color:#F87171; }
+  </style>
+</head>
+<body class="text-gray-100">
+  <div id="app" class="max-w-7xl mx-auto p-6 space-y-6">
+    <header class="mb-4">
+      <h1 class="text-3xl font-bold">Credit Stress Simulator</h1>
+      <p class="muted">Single-company tool linking live market + official fundamentals with scenario analysis.</p>
+    </header>
 
-export default function Dashboard() {
-  // --- Config ---
-  const DEFAULT_TICKER = "NFLX";
-  const CIKS = {
-    NFLX: "0001065280",
-    AAPL: "0000320193",
-    MSFT: "0000789019",
-    AMZN: "0001018724",
-    GOOGL: "0001652044",
-  } as const;
+    <!-- Controls -->
+    <section class="card p-5">
+      <h2 class="text-xl font-semibold mb-3">Company & Scenario Controls</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm muted mb-1">Search Company</label>
+          <div class="flex gap-2">
+            <input id="search" class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2" placeholder="Type company or ticker (e.g., Netflix or NFLX)" />
+            <button id="btnSearch" class="px-3 py-2 bg-blue-600 rounded-lg">Load</button>
+          </div>
+          <p class="text-xs muted mt-1">Autocomplete powered by Yahoo search; fundamentals via SEC CompanyFacts.</p>
+        </div>
+        <div>
+          <label class="block text-sm muted mb-1">Preset</label>
+          <select id="preset" class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2">
+            <option value="current">Current (Live Market)</option>
+            <option value="fed+200">Fed Hike (+200 bps)</option>
+            <option value="spread+100">Downgrade Wave (+100 bps spreads)</option>
+            <option value="oil+30">Oil Shock (+30% ↑ commodities)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm muted mb-1">Rate Shock (bps)</label>
+            <input id="rateShock" type="number" value="0" class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2"/>
+          </div>
+          <div>
+            <label class="block text-sm muted mb-1">Spread Shock (bps)</label>
+            <input id="spreadShock" type="number" value="0" class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2"/>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 flex gap-3">
+        <button id="run" class="px-4 py-2 bg-green-600 rounded-lg">Run Simulation</button>
+        <button id="exportPdf" class="px-4 py-2 bg-indigo-600 rounded-lg">Export PDF</button>
+        <button id="exportXlsx" class="px-4 py-2 bg-emerald-600 rounded-lg">Export Excel</button>
+        <span id="status" class="text-sm ml-2 muted"></span>
+      </div>
+    </section>
 
-  // Optional: FRED API Key (insert your key to avoid throttling)
-  const FRED_API_KEY = "YOUR_FRED_API_KEY"; // get one free at https://fred.stlouisfed.org/
-
-  // --- State ---
-  const [ticker, setTicker] = React.useState<string>(DEFAULT_TICKER);
-  const [prices, setPrices] = React.useState<{date:string; close:number}[]>([]);
-  const [priceMeta, setPriceMeta] = React.useState<any>(null);
-  const [secFacts, setSecFacts] = React.useState<any>(null);
-  const [fred, setFred] = React.useState<{ t2y?: any[]; t10y?: any[]; hy?: any[]; ig?: any[] }>({});
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState("");
-
-  // --- Mock data retained for non-company widgets ---
-  const marketData = [
-    { name: "Jan", rates: 3.8, spreads: 120 },
-    { name: "Feb", rates: 4.0, spreads: 140 },
-    { name: "Mar", rates: 4.3, spreads: 160 },
-  ];
-
-  const pipelineData = [
-    { name: "M&A", deals: 12 },
-    { name: "ECM", deals: 8 },
-    { name: "DCM", deals: 15 },
-    { name: "LevFin", deals: 10 },
-  ];
-
-  const aiAlerts = [
-    { client: "Client X", alert: "Downgrade probability increased by 20% this week" },
-    { client: "Client Y", alert: "Maturity wall approaching in 2026, refinancing at +180bps" },
-    { client: "Client Z", alert: "Activist investor disclosed 5% stake yesterday" },
-  ];
-
-  // --- Helpers ---
-  function latestValueByTag(facts: any, tag: string) {
-    try {
-      const fact = facts?.facts?.["us-gaap"]?.[tag];
-      if (!fact) return null;
-      const units = Object.values(fact.units || {});
-      if (!units.length) return null;
-      const all: any[] = (units as any[]).flat().filter((x: any) => x?.val !== null);
-      all.sort((a, b) => new Date(b.end).getTime() - new Date(a.end).getTime());
-      return all[0] || null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function fmtUSD(n?: number) {
-    if (n == null) return "—";
-    const abs = Math.abs(n);
-    const sign = n < 0 ? "-" : "";
-    if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2)}T`;
-    if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(2)}B`;
-    if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2)}M`;
-    return `${sign}${abs.toLocaleString()}`;
-  }
-
-  // --- Effects: Fetch Yahoo Finance prices + SEC facts ---
-  React.useEffect(() => {
-    async function fetchCompany(tkr: string) {
-      setLoading(true);
-      setError("");
-      try {
-        // 1) Yahoo Finance price history
-        const yf = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tkr}?range=6mo&interval=1d`);
-        const yfJson = await yf.json();
-        const r = yfJson?.chart?.result?.[0];
-        if (r) {
-          const tzOffset = r.meta.gmtoffset || 0;
-          const series = r.timestamp
-            .map((t: number, idx: number) => ({
-              date: new Date((t + tzOffset) * 1000).toISOString().slice(0, 10),
-              close: r.indicators.quote[0].close[idx],
-            }))
-            .filter((d: any) => d.close != null);
-          setPrices(series);
-          setPriceMeta(r.meta);
-        } else {
-          setPrices([]);
-          setPriceMeta(null);
-        }
-
-        // 2) SEC Company Facts (official)
-        const cik = (CIKS as any)[tkr];
-        if (!cik) throw new Error(`No CIK mapping for ${tkr}`);
-        const sec = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
-          headers: {
-            "User-Agent": "IB-Dashboard (your-email@example.com)",
-            Accept: "application/json",
-          },
-        });
-        if (!sec.ok) throw new Error(`SEC ${sec.status}`);
-        const secJson = await sec.json();
-        setSecFacts(secJson);
-      } catch (e: any) {
-        console.error(e);
-        setError("Live data fetch failed (likely CORS or throttling). Using placeholders. See code comments.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchCompany(ticker);
-  }, [ticker]);
-
-  // Fetch FRED macro curves & spreads (UST 2Y/10Y, HY OAS, IG OAS)
-  React.useEffect(() => {
-    async function fetchFred(series: string) {
-      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${new Date(new Date().setFullYear(new Date().getFullYear()-1)).toISOString().slice(0,10)}`;
-      const res = await fetch(url);
-      return res.ok ? res.json() : null;
-    }
-    async function go() {
-      try {
-        const [t2y, t10y, hy, ig] = await Promise.all([
-          fetchFred("DGS2"), // 2Y UST
-          fetchFred("DGS10"), // 10Y UST
-          fetchFred("BAMLH0A0HYM2"), // ICE BofA US High Yield OAS
-          fetchFred("BAMLC0A0CM"), // ICE BofA US Corporate (IG) OAS
-        ]);
-        setFred({ t2y: t2y?.observations, t10y: t10y?.observations, hy: hy?.observations, ig: ig?.observations });
-      } catch (e) {
-        console.warn("FRED fetch failed", e);
-      }
-    }
-    if (FRED_API_KEY && FRED_API_KEY !== "YOUR_FRED_API_KEY") go();
-  }, []);
-
-  // --- Derived fundamentals from SEC ---
-  const rev = latestValueByTag(secFacts, "Revenues");
-  const ni = latestValueByTag(secFacts, "NetIncomeLoss");
-  const assets = latestValueByTag(secFacts, "Assets");
-  const liab = latestValueByTag(secFacts, "Liabilities");
-  const equity = latestValueByTag(secFacts, "StockholdersEquity");
-
-  const lastClose = prices.length ? prices[prices.length - 1].close : null;
-  const prevClose = prices.length > 1 ? prices[prices.length - 2].close : null;
-  const dayChg = lastClose != null && prevClose != null ? ((lastClose - prevClose) / prevClose) * 100 : null;
-
-  // Convert FRED obs to chart data
-  const fredSeries = (obs?: any[]) =>
-    (obs || [])
-      .filter((o) => o.value !== ".")
-      .map((o) => ({ date: o.date, value: Number(o.value) }));
-
-  return (
-    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {/* Controls */}
-      <div className="col-span-3 flex items-center gap-3">
-        <label className="text-sm text-gray-600">Ticker</label>
-        <select
-          className="border rounded-xl px-3 py-2 text-sm"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value)}
-        >
-          {Object.keys(CIKS).map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        {loading && <span className="text-xs text-gray-500">Loading {ticker}…</span>}
-        {error && <span className="text-xs text-yellow-700">{error}</span>}
+    <!-- Output Container for PDF -->
+    <section id="report" class="space-y-6">
+      <!-- Snapshot -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold">Company Snapshot</h2>
+          <div id="asof" class="text-xs muted"></div>
+        </div>
+        <div id="snapshot" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3"></div>
+        <div class="mt-4" id="priceChart" style="height:240px;"></div>
       </div>
 
-      {/* Company Snapshot */}
-      <Card className="col-span-3">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-2">🏢 Company Snapshot — {ticker}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="flex flex-col"><span className="text-xs text-gray-500">Last Close</span><span className="text-lg font-semibold">{lastClose ? `$${lastClose.toFixed(2)}` : "—"}</span></div>
-            <div className="flex flex-col"><span className="text-xs text-gray-500">Day Change</span><span className={`text-lg font-semibold ${dayChg! > 0 ? "text-green-600" : dayChg! < 0 ? "text-red-600" : ""}`}>{dayChg != null ? `${dayChg.toFixed(2)}%` : "—"}</span></div>
-            <div className="flex flex-col"><span className="text-xs text-gray-500">Market Cap*</span><span className="text-lg font-semibold">{priceMeta?.marketCap ? fmtUSD(priceMeta.marketCap) : "—"}</span></div>
-            <div className="flex flex-col"><span className="text-xs text-gray-500">Price Currency</span><span className="text-lg font-semibold">{priceMeta?.currency || "—"}</span></div>
+      <!-- Fundamentals -->
+      <div class="card p-5">
+        <h2 class="text-xl font-semibold">SEC Fundamentals (Official)</h2>
+        <div id="fundamentals" class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-3"></div>
+        <p class="text-xs muted mt-2">Source: <code>data.sec.gov</code> CompanyFacts API. Replace <code>User-Agent</code> header with your email/firm if proxying.</p>
+      </div>
+
+      <!-- Scenario Results -->
+      <div class="card p-5">
+        <h2 class="text-xl font-semibold">Scenario Results</h2>
+        <div id="scenario" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3"></div>
+        <p class="text-xs muted mt-2">Simple heuristics: impact on interest expense, interest coverage, and refinancing cost based on shocks.</p>
+      </div>
+
+      <!-- Macro Strip -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold">Macro Strip — UST & Credit Spreads (FRED)</h2>
+          <span class="text-xs muted">FRED key enabled</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-3">
+          <div>
+            <h3 class="text-sm font-semibold">US 2Y & 10Y Treasury</h3>
+            <div id="ust2" style="height:160px"></div>
+            <div id="ust10" style="height:160px" class="mt-2"></div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">*From Yahoo Finance meta when available. Data shown is for {ticker}.</p>
-          <div className="mt-4" style={{ width: "100%", height: 240 }}>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={prices}>
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="close" stroke="#111827" name="Close" />
-              </LineChart>
-            </ResponsiveContainer>
+          <div>
+            <h3 class="text-sm font-semibold">ICE BofA OAS — HY vs IG</h3>
+            <div id="hy" style="height:160px"></div>
+            <div id="ig" style="height:160px" class="mt-2"></div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+    </section>
+  </div>
 
-      {/* SEC Fundamentals */}
-      <Card className="col-span-3">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🏛️ SEC Fundamentals (Official filings)</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Revenue (latest)</div><div className="text-lg font-semibold">{fmtUSD(rev?.val)}</div><div className="text-[10px] text-gray-400">Period end: {rev?.end || "—"}</div></div>
-            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Net Income (latest)</div><div className="text-lg font-semibold">{fmtUSD(ni?.val)}</div><div className="text-[10px] text-gray-400">Period end: {ni?.end || "—"}</div></div>
-            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Assets</div><div className="text-lg font-semibold">{fmtUSD(assets?.val)}</div><div className="text-[10px] text-gray-400">{assets?.end || "—"}</div></div>
-            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Liabilities</div><div className="text-lg font-semibold">{fmtUSD(liab?.val)}</div><div className="text-[10px] text-gray-400">{liab?.end || "—"}</div></div>
-            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Equity</div><div className="text-lg font-semibold">{fmtUSD(equity?.val)}</div><div className="text-[10px] text-gray-400">{equity?.end || "—"}</div></div>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Data source: <code>data.sec.gov</code> CompanyFacts API. Replace the <code>User-Agent</code> header with your email/firm per SEC guidance.</p>
-        </CardContent>
-      </Card>
+  <script>
+    const { createElement: h } = React;
+    const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } = Recharts;
 
-      {/* Macro & Spreads (FRED) */}
-      <Card className="col-span-3">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-2">🌐 Macro Strip — UST & Credit Spreads (FRED)</h2>
-          {!FRED_API_KEY || FRED_API_KEY === "YOUR_FRED_API_KEY" ? (
-            <p className="text-xs text-yellow-700 mb-2">Add your FRED API key in code to enable live macro charts.</p>
-          ) : null}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="text-sm font-semibold mb-2">US 2Y vs 10Y Treasury Yield</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={fredSeries(fred.t2y)}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#2563eb" name="2Y" />
-                </LineChart>
-              </ResponsiveContainer>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={fredSeries(fred.t10y)}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#16a34a" name="10Y" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div>
-              <div className="text-sm font-semibold mb-2">ICE BofA OAS — HY vs IG</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={fredSeries(fred.hy)}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#ef4444" name="HY OAS (bps)" />
-                </LineChart>
-              </ResponsiveContainer>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={fredSeries(fred.ig)}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#f59e0b" name="IG OAS (bps)" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    // --- Config ---
+    const FRED_API_KEY = "0aecc3398de3f805726545f04b2c6039"; // ✅ Live FRED key from vpd1@fordham.edu
+    const SEC_COMPANY_TICKERS = "https://www.sec.gov/files/company_tickers.json"; // maps ticker->CIK
 
-      {/* Client Pipeline (kept) */}
-      <Card>
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🤝 Client Pipeline</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={pipelineData}>
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="deals" fill="#f97316" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+    // --- State (simple module-level store) ---
+    let SEC_INDEX = null; // will hold mapping of ticker->CIK
+    let CURRENT = { ticker: null, name: null, cik: null, prices: [], meta: {}, facts: null, scenario: {} };
 
-      {/* Sector Heatmap (kept) */}
-      <Card className="col-span-2">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🔥 Sector Heatmap</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { sector: "Tech", status: "Hot" },
-              { sector: "Energy", status: "Warm" },
-              { sector: "Healthcare", status: "Hot" },
-              { sector: "Retail", status: "Cold" },
-            ].map((s, i) => (
-              <motion.div key={i} whileHover={{ scale: 1.05 }} className="p-4 rounded-2xl shadow bg-gray-50 text-center">
-                <p className="font-semibold">{s.sector}</p>
-                <p className={`text-sm ${s.status === "Hot" ? "text-red-600" : s.status === "Cold" ? "text-blue-600" : "text-yellow-600"}`}>{s.status}</p>
-              </motion.div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+    // --- Utilities ---
+    function fmtUSD(n){ if(n==null) return "—"; const abs=Math.abs(n), s=n<0?"-":""; if(abs>=1e12) return s+(abs/1e12).toFixed(2)+"T"; if(abs>=1e9) return s+(abs/1e9).toFixed(2)+"B"; if(abs>=1e6) return s+(abs/1e6).toFixed(2)+"M"; return s+abs.toLocaleString(); }
+    function byTag(facts, tag){ try{ const f=facts?.facts?.["us-gaap"]?.[tag]; if(!f) return null; const units=Object.values(f.units||{}); if(!units.length) return null; const all=units.flat().filter(x=>x?.val!=null); all.sort((a,b)=> new Date(b.end)-new Date(a.end)); return all[0]; }catch{ return null; } }
 
-      {/* Capital Structure Monitor (kept) */}
-      <Card>
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🏦 Capital Structure Risk</h2>
-          <ul className="space-y-2">
-            <li>⚠️ Client A: Refi cliff in 2026</li>
-            <li>⚠️ Client B: Net Leverage 6.2x</li>
-            <li>✅ Client C: IG Stable</li>
-            <li>⚠️ Client D: Rating under review</li>
-          </ul>
-        </CardContent>
-      </Card>
+    function mountChart(containerId, data, key="value", stroke="#60A5FA"){
+      const el=document.getElementById(containerId); if(!el) return;
+      ReactDOM.render(
+        h(ResponsiveContainer,{width:"100%",height:"100%"},
+          h(LineChart,{data},
+            h(XAxis,{dataKey:"date", hide:true}),
+            h(YAxis,{}),
+            h(Tooltip,null),
+            h(Line,{type:"monotone", dataKey:key, stroke})
+          )
+        ),
+        el
+      );
+    }
 
-      {/* Team & Revenue Performance (kept) */}
-      <Card>
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">📈 Team & Revenue</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-2">
-              <DollarSign className="text-green-600" />
-              <span>$52m YTD Fees</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="text-blue-600" />
-              <span>12 Mandates Won</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Users className="text-purple-600" />
-              <span>Team Utilization: 87%</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Briefcase className="text-orange-600" />
-              <span>Fee Wallet: +8% vs peers</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    // --- Fetch helpers ---
+    async function ensureSECIndex(){
+      if(SEC_INDEX) return SEC_INDEX;
+      const res=await fetch(SEC_COMPANY_TICKERS);
+      const json=await res.json(); // {0:{cik_str:..., ticker:..., title:...}, ...}
+      const map={};
+      Object.values(json).forEach(r=>{
+        map[r.ticker.toUpperCase()]={ cik: (""+r.cik_str).padStart(10,"0"), name:r.title };
+      });
+      SEC_INDEX=map; return map;
+    }
 
-      {/* AI-Powered Alerts with Actions */}
-      <Card className="col-span-3">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🔔 AI-Powered Alerts</h2>
-          <ul className="space-y-3">
-            {aiAlerts.map((a, i) => (
-              <li key={i} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50">
-                <div className="flex items-start gap-2">
-                  <Bell className="text-red-600 mt-0.5" />
-                  <div>
-                    <div className="font-semibold">{a.client}</div>
-                    <div className="text-sm">{a.alert}</div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button className="text-xs">Schedule CFO Call</Button>
-                  <Button className="text-xs">Draft Client Note</Button>
-                  <Button className="text-xs">Open Pitch Template</Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+    async function yahooSearch(q){ const r=await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}`); return r.ok? r.json(): null; }
+    async function yahooPrices(ticker){
+      const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=6mo&interval=1d`);
+      const j=await r.json();
+      const d=j?.chart?.result?.[0];
+      if(!d) return { series:[], meta:{} };
+      const tz=d.meta.gmtoffset||0;
+      const series=d.timestamp.map((t,i)=>({
+        date:new Date((t+tz)*1000).toISOString().slice(0,10),
+        close:d.indicators.quote[0].close[i]
+      })).filter(x=>x.close!=null);
+      return { series, meta:d.meta };
+    }
+    async function secFacts(cik){
+      const r=await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+        headers:{ "User-Agent":"CreditStressSimulator (vpd1@fordham.edu)", Accept:"application/json" }
+      });
+      if(!r.ok) throw new Error("SEC CompanyFacts failed");
+      return r.json();
+    }
 
-      {/* Scenario Simulation (kept) */}
-      <Card className="col-span-3">
-        <CardContent>
-          <h2 className="text-xl font-bold mb-4">🔮 Scenario Simulator</h2>
-          <p className="mb-4 text-sm">Adjust assumptions and see impact on clients’ WACC, leverage, and coverage ratios in real time.</p>
-          <Button className="mr-4">+100bps Rates</Button>
-          <Button className="mr-4">+50bps Spreads</Button>
-          <Button>-5% FX</Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+    async function fred(series){
+      if(!FRED_API_KEY) return null;
+      const start=new Date(); start.setFullYear(start.getFullYear()-1);
+      const url=`https://api.stlouisfed.org/fred/series/observations?series_id=${series}&file_type=json&api_key=${FRED_API_KEY}&observation_start=${start.toISOString().slice(0,10)}`;
+      const r=await fetch(url); return r.ok? r.json(): null;
+    }
+
+    // --- UI wiring ---
+    document.getElementById('btnSearch').addEventListener('click', loadCompany);
+    document.getElementById('preset').addEventListener('change', syncPreset);
+    document.getElementById('run').addEventListener('click', runSimulation);
+    document.getElementById('exportPdf').addEventListener('click', exportPDF);
+    document.getElementById('exportXlsx').addEventListener('click', exportXLSX);
+
+    async function loadCompany(){
+      const q=document.getElementById('search').value.trim();
+      setStatus('Loading company…');
+      try{
+        // 1) Resolve ticker via Yahoo search
+        const y=await yahooSearch(q||'NFLX');
+        const hit=(y?.quotes||[]).find(x=>x.quoteType==='EQUITY');
+        if(!hit) throw new Error('No match found');
+        const ticker=hit.symbol.toUpperCase();
+        const name=hit.shortname || hit.longname || ticker;
+
+        // 2) Map ticker to CIK via SEC index
+        const idx=await ensureSECIndex();
+        const rec=idx[ticker];
+        if(!rec) throw new Error('CIK not found in SEC index for '+ticker);
+
+        // 3) Fetch prices and SEC facts
+        const [p,f]=await Promise.all([yahooPrices(ticker), secFacts(rec.cik)]);
+        CURRENT={ ticker, name, cik:rec.cik, prices:p.series, meta:p.meta, facts:f, scenario:{} };
+
+        renderSnapshot();
+        renderFundamentals();
+        await renderMacro();
+        setStatus('Ready. Choose preset and Run Simulation.');
+      }catch(e){ console.error(e); setStatus('Load failed (CORS or source throttle). Try again.'); }
+    }
+
+    function renderSnapshot(){
+      const s=document.getElementById('snapshot'); s.innerHTML='';
+      const last=CURRENT.prices.at(-1)?.close; const prev=CURRENT.prices.at(-2)?.close; const ch=(last&&prev)?((last-prev)/prev*100):null;
+      const rows=[
+        ['Company', CURRENT.name+` (${CURRENT.ticker})`],
+        ['Last Close', last?`$${last.toFixed(2)}`:'—'],
+        ['Day Change', ch!=null? (ch>0?`+${ch.toFixed(2)}%`:`${ch.toFixed(2)}%`):'—'],
+        ['Currency', CURRENT.meta?.currency||'—']
+      ];
+      rows.forEach(([k,v])=>{ const d=document.createElement('div'); d.innerHTML=`<div class='text-xs muted'>${k}</div><div class='text-lg font-semibold'>${v}</div>`; s.appendChild(d); });
+      document.getElementById('asof').textContent='As of '+ new Date().toLocaleString();
+      // chart
+      ReactDOM.render(
+        h(ResponsiveContainer,{width:'100%',height:240},
+          h(LineChart,{data:CURRENT.prices},
+            h(XAxis,{dataKey:'date',hide:true}),
+            h(YAxis,{}),
+            h(Tooltip,null),
+            h(Line,{type:'monotone',dataKey:'close',stroke:'#34D399'})
+          )
+        ),
+        document.getElementById('priceChart')
+      );
+    }
+
+    function renderFundamentals(){
+      const f=document.getElementById('fundamentals'); f.innerHTML='';
+      const facts=CURRENT.facts;
+      const rev=byTag(facts,'Revenues');
+      const ni=byTag(facts,'NetIncomeLoss');
+      const assets=byTag(facts,'Assets');
+      const liab=byTag(facts,'Liabilities');
+      const eq=byTag(facts,'StockholdersEquity');
+      const items=[ ['Revenue', rev?.val], ['Net Income', ni?.val], ['Assets', assets?.val], ['Liabilities', liab?.val], ['Equity', eq?.val] ];
+      items.forEach(([k,v])=>{ const d=document.createElement('div'); d.innerHTML=`<div class='text-xs muted'>${k}</div><div class='text-lg font-semibold'>${fmtUSD(v)}</div>`; f.appendChild(d); });
+    }
+
+    async function renderMacro(){
+      const [t2, t10, hy, ig] = await Promise.all([
+        fred('DGS2'), fred('DGS10'), fred('BAMLH0A0HYM2'), fred('BAMLC0A0CM')
+      ]);
+      const toSeries = o => (o?.observations||[]).filter(x=>x.value!=='.').map(x=>({date:x.date, value:Number(x.value)}));
+      mountChart('ust2', toSeries(t2));
+      mountChart('ust10', toSeries(t10), 'value', '#F59E0B');
+      mountChart('hy', toSeries(hy), 'value', '#EF4444');
+      mountChart('ig', toSeries(ig), 'value', '#60A5FA');
+    }
+
+    function syncPreset(){
+      const p=document.getElementById('preset').value;
+      const rate=document.getElementById('rateShock');
+      const spr=document.getElementById('spreadShock');
+      if(p==='current'){ rate.value=0; spr.value=0; }
+      if(p==='fed+200'){ rate.value=200; spr.value=0; }
+      if(p==='spread+100'){ rate.value=0; spr.value=100; }
+      if(p==='oil+30'){ rate.value=50; spr.value=25; }
+    }
+
+    function runSimulation(){
+      if(!CURRENT.ticker){ setStatus('Load a company first.'); return; }
+      const rateShock=Number(document.getElementById('rateShock').value||0);
+      const spreadShock=Number(document.getElementById('spreadShock').value||0);
+
+      // Heuristic assumptions
+      const facts=CURRENT.facts;
+      const ebit = byTag(facts,'OperatingIncomeLoss')?.val || byTag(facts,'EarningsBeforeInterestAndTaxes')?.val || null;
+      const interest = byTag(facts,'InterestExpense')?.val || 0;
+      const debt = byTag(facts,'LongTermDebtAndCapitalLeaseObligations')?.val || byTag(facts,'LongTermDebtNoncurrent')?.val || null;
+
+      // Assume 60% floating/refi within 24m; effective shock = 0.6*(rateShock+spreadShock) bps
+      const effShockBps = 0.006 * (rateShock + spreadShock); // 60% * bps/10000
+      const addedInterest = debt ? debt * (effShockBps/100) : 0; // approx, if debt available
+      const newInterest = interest + addedInterest;
+      const icrBefore = ebit && interest ? (ebit/interest) : null;
+      const icrAfter = ebit && newInterest ? (ebit/newInterest) : null;
+
+      const refiCostDelta = (rateShock + spreadShock) + ' bps';
+
+      const box=document.getElementById('scenario'); box.innerHTML='';
+      const mk = (title,lines)=>{ const d=document.createElement('div'); d.className='p-4 bg-gray-800 rounded-xl'; d.innerHTML=`<div class='font-semibold mb-1'>${title}</div>${lines.map(l=>`<div class='text-sm'>${l}</div>`).join('')}`; box.appendChild(d); };
+
+      mk('Assumptions',[ `Rate shock: <b>${rateShock} bps</b>`, `Spread shock: <b>${spreadShock} bps</b>`, `Debt considered floating/refi: <b>60%</b>` ]);
+      mk('Key Effects',[ `Added annual interest: <b>${addedInterest? '$'+fmtUSD(addedInterest):'—'}</b>`, `Interest expense (new): <b>${newInterest? '$'+fmtUSD(newInterest):'—'}</b>`, `Interest coverage (EBIT/Interest) before: <b>${icrBefore? icrBefore.toFixed(2):'—'}</b>`, `Interest coverage after: <b>${icrAfter? icrAfter.toFixed(2):'—'}</b>` ]);
+      mk('Refinancing Cue',[ `Estimated refi cost increase: <b>${refiCostDelta}</b>`, `Action: evaluate maturity wall & hedging.` ]);
+
+      setStatus('Simulation complete.');
+    }
+
+    async function exportPDF(){
+      const report=document.getElementById('report');
+      const { jsPDF } = window.jspdf;
+      const pdf=new jsPDF({ unit:'pt', format:'a4' });
+      const scale=2; const canvas=await html2canvas(report,{ scale });
+      const img=canvas.toDataURL('image/png');
+      const pageWidth=pdf.internal.pageSize.getWidth();
+      const pageHeight=pdf.internal.pageSize.getHeight();
+      const ratio=Math.min(pageWidth/canvas.width, pageHeight/canvas.height);
+      const w=canvas.width*ratio, h=canvas.height*ratio;
+      pdf.addImage(img,'PNG', (pageWidth-w)/20, 20, w*0.95, h*0.95);
+      pdf.save(`${CURRENT.ticker||'report'}_stress_report.pdf`);
+    }
+
+    function exportXLSX(){
+      const wb = XLSX.utils.book_new();
+      const snap = [
+        ['Company', CURRENT.name||''],['Ticker', CURRENT.ticker||''],['Currency', CURRENT.meta?.currency||'']
+      ];
+      const ws1 = XLSX.utils.aoa_to_sheet(snap);
+      XLSX.utils.book_append_sheet(wb, ws1, 'Snapshot');
+
+      const f=CURRENT.facts;
+      const rows=[
+        ['Metric','Value'],
+        ['Revenue', byTag(f,'Revenues')?.val||''],
+        ['NetIncome', byTag(f,'NetIncomeLoss')?.val||''],
+        ['Assets', byTag(f,'Assets')?.val||''],
+        ['Liabilities', byTag(f,'Liabilities')?.val||''],
+        ['Equity', byTag(f,'StockholdersEquity')?.val||'']
+      ];
+      const ws2 = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws2, 'Fundamentals');
+
+      XLSX.writeFile(wb, `${CURRENT.ticker||'company'}_stress_output.xlsx`);
+    }
+
+    function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+    // Load default company on start
+    (async ()=>{ document.getElementById('search').value='NFLX'; await loadCompany(); syncPreset(); })();
+  </script>
+</body>
+</html>
