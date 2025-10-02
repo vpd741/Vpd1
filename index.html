@@ -6,488 +6,459 @@
   <title>Credit Stress Simulator</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <meta name="description" content="Interactive Credit Stress Simulator for teaching / demos. Single-file app for GitHub Pages." />
+  <meta name="description" content="Interactive Credit Stress Simulator for teaching / demos. Single‑file app for GitHub Pages." />
   <style>
-    /* Subtle scrollbars + number input alignment */
-    input[type="number"] { text-align: right; }
-    .kpi { min-width: 12rem; }
-    .heatmap-cell { transition: background-color 0.3s ease; }
-    .heatmap-label { font-size: 0.75rem; }
+    input[type='number']{ text-align:right; }
+    .kpi{ min-width:12rem; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
-  
-<header class="bg-white shadow">
-  <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-    <h1 class="text-3xl font-bold text-gray-900">Credit Stress Simulator</h1>
-    <p class="mt-1 text-sm text-gray-500">
-      Interactive tool to model the impact of macroeconomic scenarios on a credit portfolio.
-    </p>
-  </div>
-</header>
-
-<main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-  <div class="space-y-6">
-    
-    <div class="bg-white p-6 shadow-md rounded-lg">
-      <h2 class="text-xl font-semibold text-gray-800 mb-4">Portfolio & Scenario Controls</h2>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        
-        <div>
-          <label for="portfolioUpload" class="block text-sm font-medium text-gray-700">Upload Portfolio (JSON)</label>
-          <input type="file" id="portfolioUpload" accept=".json" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
-          <p id="portfolioStatus" class="mt-1 text-xs text-green-600">Using sample portfolio (5 assets).</p>
-        </div>
-        
-        <div>
-          <label for="scenarioPreset" class="block text-sm font-medium text-gray-700">Select Preset</label>
-          <select id="scenarioPreset" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-            <option value="none">Custom Scenario</option>
-            <option value="rateHike">Fed Rate Hike (+200bps)</option>
-            <option value="oilShock">Oil Shock (+30%)</option>
-            <option value="downgradeWave">Sector Downgrade Wave</option>
-          </select>
-        </div>
-        
-        <div>
-          <label for="rateHikeBps" class="block text-sm font-medium text-gray-700">Rate Shock (bps)</label>
-          <input type="number" id="rateHikeBps" value="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 text-right">
-        </div>
-
-        <div>
-          <label for="defaultMultiplier" class="block text-sm font-medium text-gray-700">Default Rate Multiplier</label>
-          <input type="number" id="defaultMultiplier" step="0.1" value="1.0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 text-right">
-        </div>
-      </div>
-
-      <button onclick="runSimulation()" class="mt-6 w-full md:w-auto px-6 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-        Run Simulation
-      </button>
-    </div>
-
-    <div class="bg-white p-6 shadow-md rounded-lg">
-      <h2 class="text-xl font-semibold text-gray-800 mb-4">Executive Summary KPIs</h2>
-      <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
-        
-        <div class="kpi bg-slate-50 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-red-500">
-          <dt class="text-sm font-medium text-gray-500 truncate">Portfolio PnL Impact</dt>
-          <dd id="kpiPnL" class="mt-1 text-3xl font-semibold text-gray-900">$0.00M</dd>
-        </div>
-
-        <div class="kpi bg-slate-50 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-orange-500">
-          <dt class="text-sm font-medium text-gray-500 truncate">Stress VaR (99%)</dt>
-          <dd id="kpiVaR" class="mt-1 text-3xl font-semibold text-gray-900">$0.00M</dd>
-        </div>
-
-        <div class="kpi bg-slate-50 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-red-600">
-          <dt class="text-sm font-medium text-gray-500 truncate">New Defaults (Count)</dt>
-          <dd id="kpiDefaults" class="mt-1 text-3xl font-semibold text-gray-900">0</dd>
-        </div>
-        
-        <div class="kpi bg-slate-50 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-yellow-500">
-          <dt class="text-sm font-medium text-gray-500 truncate">Average Rating Migration</dt>
-          <dd id="kpiRatingMigration" class="mt-1 text-3xl font-semibold text-gray-900">0.0 Notches</dd>
-        </div>
-
-        <div class="kpi bg-slate-50 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-green-500">
-          <dt class="text-sm font-medium text-gray-500 truncate">Covenant Breaches</dt>
-          <dd id="kpiCovenantBreaches" class="mt-1 text-3xl font-semibold text-gray-900">0</dd>
-        </div>
+  <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-2xl md:text-3xl font-bold tracking-tight">Credit Stress Simulator</h1>
+      <div class="flex items-center gap-2 text-sm">
+        <button id="btnSave" class="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800">Save run</button>
+        <button id="btnLoad" class="px-3 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100">Load</button>
+        <button id="btnReset" class="px-3 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100" onclick="location.reload()">Reset</button>
+        <a href="#about" class="px-3 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100">About</a>
       </div>
     </div>
+  </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <div class="lg:col-span-1 bg-white p-6 shadow-md rounded-lg">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">PnL Driver Attribution ($M)</h2>
-            <div id="pnlAttribution" class="space-y-3">
-                <div class="flex justify-between border-b pb-1">
-                    <span class="text-sm font-medium text-gray-600">Interest Rate Shock:</span>
-                    <span id="attrRate" class="text-sm font-semibold text-gray-900">0.00</span>
-                </div>
-                <div class="flex justify-between border-b pb-1">
-                    <span class="text-sm font-medium text-gray-600">Spread Widening:</span>
-                    <span id="attrSpread" class="text-sm font-semibold text-gray-900">0.00</span>
-                </div>
-                <div class="flex justify-between border-b pb-1">
-                    <span class="text-sm font-medium text-gray-600">Default Losses:</span>
-                    <span id="attrDefault" class="text-sm font-semibold text-red-600">0.00</span>
-                </div>
-                <div class="flex justify-between pt-2 border-t font-bold">
-                    <span>Total PnL Impact:</span>
-                    <span id="attrTotal" class="text-gray-900">0.00</span>
-                </div>
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <section class="grid sm:grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">Quarters</div><div class="mt-1 text-2xl font-semibold"><span id="qNow">0</span> / <span id="qMax">12</span></div></div>
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">PD (12Q)</div><div class="mt-1 text-2xl font-semibold"><span id="pdNow">0.8%</span></div></div>
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">DSCR</div><div class="mt-1 text-2xl font-semibold"><span id="dscrNow">2.6x</span></div></div>
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">Interest Coverage</div><div class="mt-1 text-2xl font-semibold"><span id="icrNow">4.1x</span></div></div>
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">Net Leverage</div><div class="mt-1 text-2xl font-semibold"><span id="levNow">2.8x</span></div></div>
+      <div class="kpi bg-white rounded-2xl p-4 shadow-sm border border-slate-200"><div class="text-xs uppercase tracking-wide text-slate-500">Rating (heuristic)</div><div class="mt-1 text-2xl font-semibold"><span id="ratingNow">BBB–</span></div></div>
+    </section>
+
+    <section class="grid lg:grid-cols-12 gap-6">
+      <div class="lg:col-span-5 space-y-6">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Company Setup</h2>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-slate-600 hidden sm:block">Sector</label>
+              <select id="sectorSel" class="text-xs px-2 py-1 rounded-lg border border-slate-200 bg-white">
+                <option value="generic">Generic Industrial</option>
+                <option value="packaging">Packaging & Labeling</option>
+                <option value="ofs">Oilfield Services</option>
+                <option value="consumer">Consumer Staples</option>
+                <option value="re">Real Estate (REIT-like)</option>
+              </select>
+              <button id="btnDefaults" class="text-xs px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 hover:bg-slate-200">Default</button>
             </div>
+          </div>
+          <div class="p-4 grid grid-cols-2 gap-3 text-sm">
+            <label class="col-span-2">Starting Revenue (annual, $m)
+              <input id="rev0" type="number" value="2000" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>EBITDA Margin (%)
+              <input id="ebitdam" type="number" value="22" step="0.5" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Capex (% of revenue)
+              <input id="capexPct" type="number" value="4" step="0.5" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>ΔNWC (% of Δrevenue)
+              <input id="nwcPct" type="number" value="8" step="0.5" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Cash ($m)
+              <input id="cash0" type="number" value="300" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Total Debt ($m)
+              <input id="debt0" type="number" value="2500" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Fixed‑rate debt (%)
+              <input id="fixedPct" type="number" value="65" step="1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Fixed coupon (%)
+              <input id="fixedCpn" type="number" value="5.0" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Float spread (bps over base)
+              <input id="floatSpr" type="number" value="250" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Tax rate (%)
+              <input id="taxRate" type="number" value="24" step="1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Covenant: Max Net Leverage (x)
+              <input id="covLev" type="number" value="3.5" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Covenant: Min ICR (x)
+              <input id="covICR" type="number" value="3.0" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label class="col-span-2">Maturity wall (% of total debt due each year)
+              <div class="grid grid-cols-4 gap-2 mt-1">
+                <input id="mat1" type="number" value="10" step="1" class="px-3 py-2 border rounded-xl" title="Due within Y1"/>
+                <input id="mat2" type="number" value="20" step="1" class="px-3 py-2 border rounded-xl" title="Due in Y2"/>
+                <input id="mat3" type="number" value="25" step="1" class="px-3 py-2 border rounded-xl" title="Due in Y3"/>
+                <input id="mat4" type="number" value="45" step="1" class="px-3 py-2 border rounded-xl" title="Due Y4+ (refi laddered)"/>
+              </div>
+            </label>
+          </div>
         </div>
 
-        <div class="lg:col-span-2 bg-white p-6 shadow-md rounded-lg">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Watchlist (At-Risk Names & Covenant Breaches)</h2>
-            <ul id="watchlist" class="divide-y divide-gray-200 h-60 overflow-y-auto">
-                <li class="py-2 text-sm text-gray-500 italic">Run simulation to populate watchlist...</li>
-            </ul>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Macro & Stress</h2>
+            <div class="text-xs text-slate-500">Quarterly model (12Q horizon)</div>
+          </div>
+          <div class="p-4 grid grid-cols-2 gap-3 text-sm">
+            <label>Base GDP growth (q/q, %)
+              <input id="gdpBase" type="number" value="0.6" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Inflation (q/q, %)
+              <input id="infl" type="number" value="0.6" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Policy/base rate (%, annual)
+              <input id="baseRate" type="number" value="4.5" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Commodity shock (margin bps)
+              <input id="commShock" type="number" value="0" step="25" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <div class="col-span-2 flex flex-wrap gap-2 mt-1">
+              <button data-preset="soft" class="preset px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200">Soft patch</button>
+              <button data-preset="recession" class="preset px-3 py-2 rounded-xl bg-amber-100 border border-amber-300 hover:bg-amber-200">Mild recession</button>
+              <button data-preset="rateshock" class="preset px-3 py-2 rounded-xl bg-rose-100 border border-rose-300 hover:bg-rose-200">Rate shock</button>
+              <button data-preset="supply" class="preset px-3 py-2 rounded-xl bg-emerald-100 border border-emerald-300 hover:bg-emerald-200">Supply shock</button>
+              <button data-preset="custom" class="preset px-3 py-2 rounded-xl bg-indigo-100 border border-indigo-300 hover:bg-indigo-200">Custom</button>
+              <span class="text-xs text-slate-500 ml-auto">Sector cycles auto-adjust with preset</span>
+            </div>
+          </div>
         </div>
-    </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      
-      <div class="lg:col-span-1 bg-white p-6 shadow-md rounded-lg">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Sector-Rating Heatmap (Notional $M)</h2>
-        <div id="heatmapContainer" class="p-2 border border-gray-200">
-            <div id="heatmap" class="grid grid-cols-6 gap-0.5">
-                <div class="heatmap-label font-bold text-gray-500 p-1">Sector</div>
-                <div class="heatmap-label font-bold text-gray-500 text-center p-1">AAA-A</div>
-                <div class="heatmap-label font-bold text-gray-500 text-center p-1">BBB</div>
-                <div class="heatmap-label font-bold text-gray-500 text-center p-1">BB</div>
-                <div class="heatmap-label font-bold text-gray-500 text-center p-1">B-CCC</div>
-                <div class="heatmap-label font-bold text-gray-500 text-center p-1">D</div>
-                </div>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Controls</h2>
+            <div class="text-xs text-slate-500">Policy & management levers</div>
+          </div>
+          <div class="p-4 grid grid-cols-2 gap-3 text-sm">
+            <label>Pricing power (bps to margin)
+              <input id="pricingBps" type="number" value="25" step="25" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Cost takeout (bps to margin)
+              <input id="costOutBps" type="number" value="50" step="25" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Capex flex (% of rev)
+              <input id="capexFlex" type="number" value="-1" step="0.5" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Buyback ($m, this qtr)
+              <input id="buyback" type="number" value="0" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Dividend ($m, this qtr)
+              <input id="dividend" type="number" value="30" step="5" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Refi spread (bps over base)
+              <input id="refiSpread" type="number" value="300" step="25" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Revolver limit ($m)
+              <input id="revolverLim" type="number" value="500" step="10" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+            <label>Amortization (% qtr on total debt)
+              <input id="amortPct" type="number" value="1.0" step="0.1" class="mt-1 w-full px-3 py-2 border rounded-xl" />
+            </label>
+          </div>
+          <div class="p-4 flex flex-wrap gap-2">
+            <button id="btnStep" class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800">Advance 1 Quarter</button>
+            <button id="btnAuto" class="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100">Autopilot (12Q)</button>
+            <button id="btnUndo" class="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100">Undo</button>
+          </div>
         </div>
+
+        <div id="alerts" class="space-y-2"></div>
       </div>
 
-      <div class="lg:col-span-2 bg-white p-6 shadow-md rounded-lg">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Portfolio Value Over Time</h2>
-        <canvas id="pnlChart" class="h-80"></canvas>
+      <div class="lg:col-span-7 space-y-6">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+          <h2 class="text-lg font-semibold mb-3">Key Metrics Over Time</h2>
+          <div class="grid md:grid-cols-2 gap-4">
+            <canvas id="chartRevenue" height="160"></canvas>
+            <canvas id="chartLeverage" height="160"></canvas>
+            <canvas id="chartCashDebt" height="160"></canvas>
+            <canvas id="chartCoverage" height="160"></canvas>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 overflow-auto">
+          <h2 class="text-lg font-semibold mb-3">Quarterly Detail</h2>
+          <table id="tbl" class="min-w-full text-sm">
+            <thead class="text-left text-slate-600">
+              <tr>
+                <th class="pr-4 py-2">Q</th>
+                <th class="pr-4 py-2">Revenue</th>
+                <th class="pr-4 py-2">EBITDA</th>
+                <th class="pr-4 py-2">Int Exp</th>
+                <th class="pr-4 py-2">FCF</th>
+                <th class="pr-4 py-2">Cash</th>
+                <th class="pr-4 py-2">Debt</th>
+                <th class="pr-4 py-2">Net Lev</th>
+                <th class="pr-4 py-2">ICR</th>
+                <th class="pr-4 py-2">DSCR</th>
+                <th class="pr-4 py-2">Flags</th>
+              </tr>
+            </thead>
+            <tbody id="tblBody" class="font-mono"></tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
 
-  </div>
-</main>
+    <section id="about" class="mt-10 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <h2 class="text-xl font-semibold mb-2">About This Simulator</h2>
+      <p class="text-sm text-slate-700 leading-relaxed">
+        This single‑file web app models a simplified corporate credit over a 12‑quarter horizon. It estimates EBITDA, interest, cash flow,
+        leverage, and coverage using tunable assumptions (fixed vs floating mix, spreads, maturities, pricing/cost actions). It flags covenant
+        breaches and infers a notional rating from leverage & coverage. Save and load runs via your browser’s localStorage.
+      </p>
+      <ul class="mt-3 text-sm list-disc pl-5 text-slate-700">
+        <li><strong>Heuristic PD & Rating (updated):</strong> Bands calibrated to stylized S&amp;P/Moody’s leverage/coverage grids and historical average default rates (educational approximations).</li>
+        <li><strong>Sector presets:</strong> Toggle baseline margins, capex intensity, working capital, debt mix, and cyclicality for Packaging, Oilfield Services, Consumer Staples, and REIT-like profiles.</li>
+        <li><strong>Limitations:</strong> Not a pricing tool; ignores FX, detailed working‑capital seasonality, and idiosyncratic risks.</li>
+      </ul>
+      <p class="mt-3 text-xs text-slate-500">MIT License. Built for quick GitHub Pages deployment—just drop this as <code>index.html</code> into a repo and enable Pages.</p>
+    </section>
+  </main>
 
-<script>
-  // --- 1. CORE DATA & CONSTANTS ---
-  let currentPortfolio = [];
-  const initialSamplePortfolio = [
-    { name: "Global Auto Co.", sector: "Automotive", rating: "BBB", duration: 5, notional: 500, PD: 0.005, recovery: 0.40, spread: 250, leverage: 3.5, maxLeverage: 4.0, industry: 'Cyclical' },
-    { name: "Tech Services Inc.", sector: "Technology", rating: "A", duration: 3, notional: 800, PD: 0.002, recovery: 0.50, spread: 150, leverage: 2.1, maxLeverage: 3.0, industry: 'Stable' },
-    { name: "Regional Bank PLC", sector: "Financials", rating: "BB", duration: 6, notional: 300, PD: 0.015, recovery: 0.35, spread: 400, leverage: 4.8, maxLeverage: 5.0, industry: 'Cyclical' },
-    { name: "Energy Explorer LLC", sector: "Energy", rating: "B", duration: 7, notional: 200, PD: 0.030, recovery: 0.30, spread: 650, leverage: 5.5, maxLeverage: 6.0, industry: 'Cyclical' },
-    { name: "Consumer Goods Group", sector: "Consumer", rating: "AAA", duration: 4, notional: 700, PD: 0.001, recovery: 0.55, spread: 100, leverage: 1.5, maxLeverage: 3.5, industry: 'Stable' },
-  ];
+  <footer class="max-w-7xl mx-auto px-4 py-10 text-xs text-slate-500">© <span id="year"></span> Credit Stress Simulator · Educational use only.</footer>
 
-  // Helper functions for rating conversion
-  const ratingToScore = { "AAA": 7, "AA": 6, "A": 5, "BBB": 4, "BB": 3, "B": 2, "CCC": 1, "D": 0 };
-  const scoreToRating = { 7: "AAA", 6: "AA", 5: "A", 4: "BBB", 3: "BB", 2: "B", 1: "CCC", 0: "D" };
-  const ratingToGroup = (rating) => {
-    const score = ratingToScore[rating];
-    if (score >= 5) return 'AAA-A';
-    if (score === 4) return 'BBB';
-    if (score === 3) return 'BB';
-    if (score >= 1) return 'B-CCC';
-    return 'D';
-  };
-  const ratingGroups = ['AAA-A', 'BBB', 'BB', 'B-CCC', 'D'];
-
-  // Scenario Presets: Added stress-related impacts
-  const scenarioPresets = {
-    'rateHike': { rateHikeBps: 200, defaultMultiplier: 1.5, ratingShift: -1, sectorImpact: { 'Financials': -2, 'Consumer': -1 }, leverageIncrease: 0.5 },
-    'oilShock': { rateHikeBps: 50, defaultMultiplier: 2.5, ratingShift: 0, sectorImpact: { 'Energy': -3, 'Automotive': -2 }, leverageIncrease: 0.3 },
-    'downgradeWave': { rateHikeBps: 0, defaultMultiplier: 1.8, ratingShift: -1, sectorImpact: { 'Financials': -1, 'Technology': -1 }, leverageIncrease: 0.4 }
-  };
-
-  // --- 2. FILE UPLOAD HANDLER ---
-  function handleFileUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        const data = JSON.parse(e.target.result);
-        if (Array.isArray(data) && data.length > 0) {
-          // Validate structure (simplified check)
-          if (data[0].name && data[0].notional && data[0].rating) {
-            currentPortfolio = data;
-            document.getElementById('portfolioStatus').innerText = `Portfolio loaded successfully (${data.length} assets).`;
-            document.getElementById('portfolioStatus').classList.replace('text-red-600', 'text-green-600');
-            runSimulation();
-          } else {
-            throw new Error("Invalid portfolio structure. Requires 'name', 'notional', 'rating', etc.");
-          }
-        } else {
-          throw new Error("The file is empty or not a valid array.");
-        }
-      } catch (error) {
-        console.error("Error parsing file:", error);
-        currentPortfolio = initialSamplePortfolio; // Fallback
-        document.getElementById('portfolioStatus').innerText = `Error loading portfolio: ${error.message}. Using sample data.`;
-        document.getElementById('portfolioStatus').classList.replace('text-green-600', 'text-red-600');
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  // --- 3. SIMULATION LOGIC ---
-  function runSimulation() {
-    // Ensure we have a portfolio loaded
-    if (currentPortfolio.length === 0) {
-        currentPortfolio = initialSamplePortfolio;
-    }
-    
-    const preset = document.getElementById('scenarioPreset').value;
-    let rateHikeBps = parseFloat(document.getElementById('rateHikeBps').value);
-    let defaultMultiplier = parseFloat(document.getElementById('defaultMultiplier').value);
-    
-    let baseRatingShift = 0;
-    let sectorRatingImpact = {};
-    let leverageIncrease = 0;
-
-    // Apply preset values if selected
-    if (preset !== 'none' && scenarioPresets[preset]) {
-      const p = scenarioPresets[preset];
-      rateHikeBps = p.rateHikeBps;
-      defaultMultiplier = p.defaultMultiplier;
-      baseRatingShift = p.ratingShift;
-      sectorRatingImpact = p.sectorImpact;
-      leverageIncrease = p.leverageIncrease;
-    }
-
-    const marketRateDelta = rateHikeBps / 10000;
-    
-    let totalPnLImpact = 0;
-    let totalRatePnL = 0;
-    let totalSpreadPnL = 0;
-    let totalDefaultLoss = 0;
-    let newDefaults = 0;
-    let totalNotchShift = 0;
-    let covenantBreaches = 0;
-    let watchlistNames = [];
-    const heatmapData = {};
-    const sectors = [...new Set(currentPortfolio.map(a => a.sector))];
-    sectors.forEach(s => heatmapData[s] = {});
-    ratingGroups.forEach(g => sectors.forEach(s => heatmapData[s][g] = 0));
-
-
-    const stressedPortfolio = currentPortfolio.map(asset => {
-      // 1. Rating Migration & Spread Impact
-      const sectorShift = sectorRatingImpact[asset.sector] || 0;
-      // Rating cannot go below D (score 0)
-      const totalShiftScore = Math.max(0, ratingToScore[asset.rating] + baseRatingShift + sectorShift); 
-      const newRating = scoreToRating[totalShiftScore] || 'D';
-      totalNotchShift += (totalShiftScore - ratingToScore[asset.rating]);
-
-      // Simplified Spread Calculation: Spreads widen as ratings drop
-      const ratingDrop = ratingToScore[asset.rating] - totalShiftScore;
-      const newSpread = asset.spread * (1 + ratingDrop * 0.15); // 15% widening per notch drop
-      
-      // Bond Price Change (PnL Attribution)
-      const duration = asset.duration || 5; // Default to 5 if not provided
-      const spreadDelta = (newSpread - asset.spread) / 10000;
-
-      // PnL 1: Rate Shock Component
-      const ratePnL = -duration * asset.notional * marketRateDelta;
-      
-      // PnL 2: Spread Widening Component
-      const spreadPnL = -duration * asset.notional * spreadDelta;
-      
-      // 2. Default & Loss Calculation
-      const stressedPD = asset.PD * defaultMultiplier;
-      const lossGivenDefault = asset.notional * (1 - asset.recovery);
-      const defaultLoss = lossGivenDefault * stressedPD; // Expected Loss
-
-      // PnL 3: Default Loss Component (Expected Loss)
-      totalDefaultLoss += defaultLoss;
-      
-      // Total PnL (Negative number indicates loss)
-      const pnl = ratePnL + spreadPnL - defaultLoss; 
-      totalPnLImpact += pnl;
-      totalRatePnL += ratePnL;
-      totalSpreadPnL += spreadPnL;
-      
-      // Determine Defaults (Heuristic: if stressed PD > 10%)
-      const isDefault = stressedPD >= 0.10;
-      if (isDefault) {
-        newDefaults += 1;
-      }
-      
-      // 3. Covenant Headroom Check (Simplified: Leverage)
-      const stressedLeverage = (asset.leverage || 4.0) + leverageIncrease;
-      const isBreached = stressedLeverage > (asset.maxLeverage || 5.0);
-      if (isBreached) {
-          covenantBreaches += 1;
-      }
-
-      // 4. Heatmap Data Aggregation (Using new rating)
-      const group = ratingToGroup(newRating);
-      heatmapData[asset.sector][group] += asset.notional;
-
-      // Watchlist Check: Low rating AND high expected loss OR covenant breach
-      if (totalShiftScore <= ratingToScore['BB'] || isBreached) {
-        let reason = [];
-        if (totalShiftScore <= ratingToScore['BB']) reason.push('Rating D/G');
-        if (isBreached) reason.push('Covenant Breach');
-
-        watchlistNames.push({ 
-            name: asset.name, 
-            rating: newRating, 
-            pnl: pnl.toFixed(2), 
-            leverage: stressedLeverage.toFixed(2), 
-            reason: reason.join(' / ') 
-        });
-      }
-
-      return { ...asset, newRating, stressedPD, pnl, stressedLeverage, isBreached };
-    });
-
-    // --- 4. KPI & DASHBOARD UPDATE ---
-    const totalPortfolioNotional = currentPortfolio.reduce((sum, asset) => sum + asset.notional, 0);
-
-    // VaR: Simplified as total default loss + 1.5x interest/spread loss volatility
-    const stressVaR = totalDefaultLoss + Math.abs(totalRatePnL + totalSpreadPnL) * 1.5;
-    
-    document.getElementById('kpiPnL').innerText = `${totalPnLImpact < 0 ? '-' : ''}$${Math.abs(totalPnLImpact).toFixed(2)}M`;
-    document.getElementById('kpiVaR').innerText = `$${stressVaR.toFixed(2)}M`;
-    document.getElementById('kpiDefaults').innerText = newDefaults;
-    document.getElementById('kpiRatingMigration').innerText = `${(-totalNotchShift / currentPortfolio.length).toFixed(1)} Notches`;
-    document.getElementById('kpiCovenantBreaches').innerText = covenantBreaches;
-
-    // PnL Attribution Update
-    document.getElementById('attrRate').innerText = totalRatePnL.toFixed(2);
-    document.getElementById('attrSpread').innerText = totalSpreadPnL.toFixed(2);
-    document.getElementById('attrDefault').innerText = `(${totalDefaultLoss.toFixed(2)})`;
-    document.getElementById('attrTotal').innerText = totalPnLImpact.toFixed(2);
-    
-    // Watchlist Update
-    updateWatchlist(watchlistNames);
-
-    // Chart Update
-    updatePnlChart(totalPortfolioNotional, totalPnLImpact);
-
-    // Heatmap Update
-    renderHeatmap(sectors, heatmapData, totalPortfolioNotional);
-  }
-
-  // --- 5. VISUALIZATION AND AUXILIARY FUNCTIONS ---
-
-  function updateWatchlist(watchlistNames) {
-    const watchlistEl = document.getElementById('watchlist');
-    watchlistEl.innerHTML = ''; // Clear previous
-    if (watchlistNames.length === 0) {
-      watchlistEl.innerHTML = '<li class="py-2 text-sm text-gray-500 italic">No names meet the at-risk criteria.</li>';
-    } else {
-        watchlistNames.forEach(item => {
-            const li = document.createElement('li');
-            li.className = 'py-2 flex justify-between items-center';
-            const lossColor = parseFloat(item.pnl) < 0 ? 'text-red-600' : 'text-green-600';
-            li.innerHTML = `
-                <div>
-                    <span class="font-medium">${item.name} (${item.rating})</span>
-                    <span class="text-xs text-gray-500 ml-2">| ${item.reason}</span>
-                </div>
-                <div class="text-right">
-                    <span class="text-xs text-gray-400 block">Lev: ${item.leverage}</span>
-                    <span class="text-sm ${lossColor} block">${item.pnl}M PnL</span>
-                </div>
-            `;
-            watchlistEl.appendChild(li);
-        });
-    }
-  }
-
-  let pnlChartInstance;
-
-  function updatePnlChart(initialValue, pnlImpact) {
-    const ctx = document.getElementById('pnlChart').getContext('2d');
-    
-    const data = {
-      labels: ['T-0 (Pre-Stress)', 'T+1 (Immediate Impact)', 'T+2 (Recovery/Prolonged Stress)'],
-      datasets: [{
-        label: 'Portfolio Value ($M)',
-        data: [
-          initialValue, 
-          initialValue + pnlImpact,
-          initialValue + pnlImpact * 0.8 
-        ],
-        borderColor: 'rgb(79, 70, 229)',
-        backgroundColor: 'rgba(79, 70, 229, 0.1)',
-        fill: true,
-        tension: 0.2
-      }]
+  <script>
+    // ---------- Utilities ----------
+    const sectorPresets = {
+      generic:{ ebitdam:22, capexPct:4,  nwcPct:8,  fixedPct:65, fixedCpn:5.0, floatSpr:250, gdpAdj:0,    margAdj:0 },
+      packaging:{ ebitdam:18, capexPct:6, nwcPct:10, fixedPct:70, fixedCpn:5.0, floatSpr:225, gdpAdj:-0.1, margAdj:-0.001 },
+      ofs:{ ebitdam:20, capexPct:5, nwcPct:12, fixedPct:55, fixedCpn:6.0, floatSpr:350, gdpAdj:0.3,  margAdj:-0.003 },
+      consumer:{ ebitdam:24, capexPct:3, nwcPct:6,  fixedPct:75, fixedCpn:4.8, floatSpr:200, gdpAdj:-0.05, margAdj:0.001 },
+      re:{ ebitdam:55, capexPct:2, nwcPct:2, fixedPct:80, fixedCpn:5.2, floatSpr:200, gdpAdj:-0.2, margAdj:0 }
     };
 
-    if (pnlChartInstance) {
-      pnlChartInstance.data = data;
-      pnlChartInstance.update();
-    } else {
-      pnlChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: data,
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: {
-              beginAtZero: false,
-              title: { display: true, text: 'Value ($ Millions)' }
-            }
-          }
-        }
-      });
+    const fmt = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    const $  = (id) => document.getElementById(id);
+    const toNum = (id) => parseFloat($(id).value || 0);
+
+    const state = { qNow:0, qMax:12, hist:[], series:{labels:[],revenue:[],ebitda:[],interest:[],fcf:[],cash:[],debt:[],netLev:[],icr:[],dscr:[]}, company:{}, macro:{}, controls:{}, flags:[] };
+
+    function applySector(key){
+      const s = sectorPresets[key] || sectorPresets.generic;
+      $('ebitdam').value = s.ebitdam; $('capexPct').value = s.capexPct; $('nwcPct').value = s.nwcPct;
+      $('fixedPct').value = s.fixedPct; $('fixedCpn').value = s.fixedCpn; $('floatSpr').value = s.floatSpr;
+      state.macro = state.macro || {}; state.macro.sector = key; state.macro.gdpAdj = s.gdpAdj/100; state.macro.margAdj = s.margAdj;
     }
-  }
 
-  function getHeatmapColor(value, maxNotional) {
-    if (value === 0) return 'bg-gray-100';
-    const intensity = value / maxNotional;
-    if (intensity < 0.1) return 'bg-indigo-100';
-    if (intensity < 0.3) return 'bg-indigo-300';
-    if (intensity < 0.6) return 'bg-indigo-500 text-white';
-    return 'bg-indigo-700 text-white';
-  }
+    function readInputs(){
+      state.company = {
+        revAnn: toNum('rev0'), ebitdam: toNum('ebitdam'), capexPct: toNum('capexPct'), nwcPct: toNum('nwcPct'),
+        cash: toNum('cash0'), debt: toNum('debt0'), fixedPct: toNum('fixedPct')/100, fixedCpn: toNum('fixedCpn')/100,
+        floatSpr: toNum('floatSpr')/10000, taxRate: toNum('taxRate')/100, covLev: toNum('covLev'), covICR: toNum('covICR'),
+        mat: [toNum('mat1'), toNum('mat2'), toNum('mat3'), toNum('mat4')],
+      };
+      const s = state.company.mat.reduce((a,b)=>a+b,0); state.company.mat = state.company.mat.map(x=>x/s);
 
-  function renderHeatmap(sectors, heatmapData, totalPortfolioNotional) {
-    const heatmapEl = document.getElementById('heatmap');
-    heatmapEl.innerHTML = `
-        <div class="heatmap-label font-bold text-gray-500 p-1">Sector</div>
-        ${ratingGroups.map(g => `<div class="heatmap-label font-bold text-gray-500 text-center p-1">${g}</div>`).join('')}
-    `; // Re-render headers
+      state.macro = { ...state.macro, gdpBase: toNum('gdpBase')/100, infl: toNum('infl')/100, baseRate: toNum('baseRate')/100, commShock: toNum('commShock')/10000, preset: currentPreset };
+      state.controls = { pricingBps: toNum('pricingBps')/10000, costOutBps: toNum('costOutBps')/10000, capexFlex: toNum('capexFlex')/100, buyback: toNum('buyback'),
+        dividend: toNum('dividend'), refiSpread: toNum('refiSpread')/10000, revolverLim: toNum('revolverLim'), amortPct: toNum('amortPct')/100 };
+    }
 
-    const maxNotional = Math.max(...sectors.flatMap(s => ratingGroups.map(g => heatmapData[s][g])));
+    function resetState(){ state.qNow=0; state.flags=[]; for(const k in state.series) state.series[k]=[]; state.series.labels=[];
+      renderKPIs({pd:0.008, dscr:2.6, icr:4.1, lev:2.8, rating:'BBB–'}); $('tblBody').innerHTML=''; chartsInit(); pushSnapshot(); }
 
-    sectors.forEach(sector => {
-      // Sector Row Label
-      const sectorLabel = document.createElement('div');
-      sectorLabel.className = 'heatmap-label p-1 font-semibold';
-      sectorLabel.innerText = sector;
-      heatmapEl.appendChild(sectorLabel);
+    function pushSnapshot(){ state.hist.push(JSON.stringify({qNow:state.qNow,series:state.series,company:state.company,macro:state.macro,controls:state.controls,flags:state.flags})); if(state.hist.length>50) state.hist.shift(); }
 
-      // Data Cells
-      ratingGroups.forEach(group => {
-        const value = heatmapData[sector][group] || 0;
-        const colorClass = getHeatmapColor(value, maxNotional);
-        
-        const cell = document.createElement('div');
-        cell.className = `heatmap-cell p-1 text-center font-bold rounded ${colorClass}`;
-        cell.title = `${sector} / ${group}: $${value.toFixed(0)}M`;
-        cell.innerText = value > 0 ? value.toFixed(0) : '-';
-        heatmapEl.appendChild(cell);
-      });
-    });
-    
-    // Set grid columns dynamically
-    heatmapEl.style.gridTemplateColumns = `repeat(${ratingGroups.length + 1}, 1fr)`;
-  }
+    function ratingFrom(lev, icr){
+      const bands=[{r:'A',levMax:2.0,icrMin:8.0},{r:'BBB+',levMax:2.5,icrMin:6.0},{r:'BBB',levMax:3.0,icrMin:4.5},{r:'BBB–',levMax:3.5,icrMin:3.0},
+        {r:'BB+',levMax:4.0,icrMin:2.5},{r:'BB',levMax:4.75,icrMin:2.0},{r:'BB–',levMax:5.5,icrMin:1.6},{r:'B+',levMax:6.5,icrMin:1.3},{r:'B',levMax:7.5,icrMin:1.1}];
+      for(const b of bands){ if(lev<=b.levMax && icr>=b.icrMin) return b.r; } return 'CCC';
+    }
 
+    function pdHeuristic(lev, icr, dscr, cash, debt, breach){
+      const r = ratingFrom(lev, icr);
+      const base1y = {'A':0.0005,'BBB+':0.001,'BBB':0.002,'BBB–':0.004,'BB+':0.010,'BB':0.020,'BB–':0.040,'B+':0.070,'B':0.100,'CCC':0.250}[r] || 0.25;
+      let pd = 1 - Math.pow(1 - base1y, 3);
+      const liqRatio = debt>0 ? cash/debt : 1;
+      if(liqRatio<0.05) pd*=1.4; else if(liqRatio<0.10) pd*=1.2;
+      if(dscr<1.0) pd*=1.25; if(breach) pd*=1.4;
+      return Math.min(0.95, Math.max(0.002, pd));
+    }
 
-  // --- 6. INITIALIZATION ---
-  document.addEventListener('DOMContentLoaded', () => {
-    currentPortfolio = initialSamplePortfolio; // Load sample data initially
-    runSimulation(); // Run with default values on load
-    
-    // Add event listeners
-    document.getElementById('portfolioUpload').addEventListener('change', handleFileUpload);
+    function quarterStep(){
+      readInputs();
+      const { company:c, macro:m, controls:u } = state;
+      const q = state.qNow + 1;
+      const revPrev = state.series.revenue.length ? state.series.revenue.at(-1) : c.revAnn/4;
 
-    const presetSelect = document.getElementById('scenarioPreset');
-    presetSelect.addEventListener('change', (event) => {
-      const preset = event.target.value;
-      if (preset !== 'none' && scenarioPresets[preset]) {
-        document.getElementById('rateHikeBps').value = scenarioPresets[preset].rateHikeBps;
-        document.getElementById('defaultMultiplier').value = scenarioPresets[preset].defaultMultiplier;
-      } else {
-        document.getElementById('rateHikeBps').value = 0;
-        document.getElementById('defaultMultiplier').value = 1.0;
+      let growth = m.gdpBase + (m.gdpAdj||0);
+      switch(m.preset){ case 'soft': growth-=0.1/100; break; case 'recession': growth-=1.2/100; break; case 'rateshock': growth-=0.4/100; break; case 'supply': growth-=0.3/100; break; }
+      const rev = revPrev*(1+growth);
+
+      let marg = c.ebitdam/100 + (m.margAdj||0);
+      marg += u.pricingBps + u.costOutBps; marg -= m.commShock;
+      if(m.preset==='supply') marg-=0.003; if(m.preset==='recession') marg-=0.002;
+      marg = Math.max(0.05, Math.min(0.45, marg));
+
+      const ebitda = rev*marg;
+      const capexRate = Math.max(0, (c.capexPct/100) + u.capexFlex);
+      const capex = rev*capexRate;
+      const dRev = rev - revPrev;
+      const dNWC = (c.nwcPct/100)*dRev;
+
+      const fixedDebt = c.debt*c.fixedPct;
+      let floatDebt = c.debt - fixedDebt;
+
+      const yearIdx = Math.min(3, Math.floor((q-1)/4));
+      const dueThisYear = c.debt*c.mat[yearIdx];
+      const dueThisQ = dueThisYear/4;
+
+      const amort = c.debt*u.amortPct;
+      const refiRate = m.baseRate + u.refiSpread;
+      const refiInt = (dueThisQ+amort)*refiRate;
+
+      const baseIntFixed = Math.max(0,(fixedDebt - dueThisQ*0.5 - amort*0.5))*c.fixedCpn/4;
+      const baseIntFloat = Math.max(0,(floatDebt - dueThisQ*0.5 - amort*0.5))*(m.baseRate + c.floatSpr)/4;
+      const interest = baseIntFixed + baseIntFloat + refiInt/4;
+
+      const tax = Math.max(0,(ebitda - interest)) * c.taxRate;
+      const fcf = ebitda - interest - tax - capex - dNWC - u.buyback - u.dividend;
+
+      let cash = c.cash + fcf;
+      let debt = c.debt;
+      let flags = [];
+      if(cash<0){
+        const need = -cash;
+        const avail = Math.max(0, u.revolverLim - (state.revolverUsed||0));
+        const draw = Math.min(need, avail);
+        cash += draw; debt += draw; state.revolverUsed=(state.revolverUsed||0)+draw;
+        if(draw<need) flags.push('Liquidity shortfall');
       }
-    });
-  });
-</script>
+
+      debt = Math.max(0, debt - amort) + dueThisQ;
+
+      const netDebt = Math.max(0, debt - cash);
+      const netLev = ebitda>0 ? netDebt/(ebitda*4) : 10;
+      const icr = interest>0 ? (ebitda/interest) : 10;
+      const dscr = interest>0 ? Math.max(0.01, (ebitda - capex) / interest) : 10;
+
+      const breach = (netLev>c.covLev) || (icr<c.covICR); if(breach) flags.push('Covenant breach');
+
+      const rating = ratingFrom(netLev, icr);
+      const pd = pdHeuristic(netLev, icr, dscr, cash, debt, breach);
+
+      state.series.labels.push('Q'+q);
+      state.series.revenue.push(rev); state.series.ebitda.push(ebitda); state.series.interest.push(interest);
+      state.series.fcf.push(fcf); state.series.cash.push(cash); state.series.debt.push(debt);
+      state.series.netLev.push(netLev); state.series.icr.push(icr); state.series.dscr.push(dscr);
+      state.flags.push(flags);
+
+      appendRow({q, rev, ebitda, interest, fcf, cash, debt, netLev, icr, dscr, flags});
+
+      document.getElementById('qNow').textContent = q;
+      renderKPIs({ pd, dscr, icr, lev: netLev, rating });
+
+      state.qNow = q; state.company.cash = cash; state.company.debt = debt; state.company.revAnn = rev*4;
+      chartsUpdate(); renderAlerts(q, pd, flags); pushSnapshot();
+    }
+
+    function renderKPIs({pd, dscr, icr, lev, rating}){
+      document.getElementById('pdNow').textContent = (pd*100).toFixed(1)+'%';
+      document.getElementById('dscrNow').textContent = dscr.toFixed(2)+'x';
+      document.getElementById('icrNow').textContent = icr.toFixed(2)+'x';
+      document.getElementById('levNow').textContent = lev.toFixed(2)+'x';
+      document.getElementById('ratingNow').textContent = rating;
+    }
+
+    function appendRow(o){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="pr-4 py-1">${o.q}</td>
+        <td class="pr-4 py-1">$${fmt(o.rev)}</td>
+        <td class="pr-4 py-1">$${fmt(o.ebitda)}</td>
+        <td class="pr-4 py-1">$${fmt(o.interest)}</td>
+        <td class="pr-4 py-1">$${fmt(o.fcf)}</td>
+        <td class="pr-4 py-1">$${fmt(o.cash)}</td>
+        <td class="pr-4 py-1">$${fmt(o.debt)}</td>
+        <td class="pr-4 py-1">${o.netLev.toFixed(2)}x</td>
+        <td class="pr-4 py-1">${o.icr.toFixed(2)}x</td>
+        <td class="pr-4 py-1">${o.dscr.toFixed(2)}x</td>
+        <td class="pr-4 py-1 text-rose-600">${o.flags.join(', ')}</td>`;
+      document.getElementById('tblBody').appendChild(tr);
+    }
+
+    function repaintAll(){
+      document.getElementById('qNow').textContent = state.qNow;
+      document.getElementById('qMax').textContent = state.qMax;
+      if(state.series.netLev.length){
+        const i = state.series.netLev.length-1;
+        const rating = ratingFrom(state.series.netLev[i], state.series.icr[i]);
+        const pd = pdHeuristic(state.series.netLev[i], state.series.icr[i], state.series.dscr[i], state.series.cash[i], state.series.debt[i], (state.flags[i]||[]).includes('Covenant breach'));
+        renderKPIs({ pd, dscr: state.series.dscr[i], icr: state.series.icr[i], lev: state.series.netLev[i], rating });
+      }
+      document.getElementById('tblBody').innerHTML='';
+      state.series.labels.forEach((_,i)=>appendRow({ q:i+1, rev:state.series.revenue[i], ebitda:state.series.ebitda[i], interest:state.series.interest[i], fcf:state.series.fcf[i], cash:state.series.cash[i], debt:state.series.debt[i], netLev:state.series.netLev[i], icr:state.series.icr[i], dscr:state.series.dscr[i], flags:state.flags[i]||[] }));
+      chartsUpdate(true);
+    }
+
+    function renderAlerts(q, pd, flags){
+      const box = document.createElement('div');
+      const color = pd>0.3 ? 'bg-rose-50 border-rose-200' : pd>0.15 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200';
+      box.className = `rounded-xl border ${color} p-3 text-sm`;
+      const issues = flags.length ? ` · <span class="text-rose-600">${flags.join(' | ')}</span>` : '';
+      box.innerHTML = `<strong>Q${q}:</strong> PD=${(pd*100).toFixed(1)}%${issues}`;
+      document.getElementById('alerts').prepend(box);
+    }
+
+    // Charts
+    let chRevenue, chLeverage, chCashDebt, chCoverage;
+    function chartsInit(){
+      const common = {responsive:true, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}}, y:{grid:{color:'#eef2f7'}}}};
+      chRevenue = new Chart(document.getElementById('chartRevenue'), { type:'line', data:{labels:[], datasets:[{label:'Revenue ($m)', data:[]}]}, options:common });
+      chLeverage = new Chart(document.getElementById('chartLeverage'), { type:'line', data:{labels:[], datasets:[{label:'Net Leverage (x)', data:[]}]}, options:common });
+      chCashDebt = new Chart(document.getElementById('chartCashDebt'), { type:'line', data:{labels:[], datasets:[{label:'Cash ($m)', data:[]},{label:'Debt ($m)', data:[]}]}, options:common });
+      chCoverage = new Chart(document.getElementById('chartCoverage'), { type:'line', data:{labels:[], datasets:[{label:'ICR (x)', data:[]},{label:'DSCR (x)', data:[]}]}, options:common });
+    }
+    function chartsUpdate(){
+      const L = state.series.labels;
+      chRevenue.data.labels=L; chRevenue.data.datasets[0].data=state.series.revenue; chRevenue.update();
+      chLeverage.data.labels=L; chLeverage.data.datasets[0].data=state.series.netLev; chLeverage.update();
+      chCashDebt.data.labels=L; chCashDebt.data.datasets[0].data=state.series.cash; chCashDebt.data.datasets[1].data=state.series.debt; chCashDebt.update();
+      chCoverage.data.labels=L; chCoverage.data.datasets[0].data=state.series.icr; chCoverage.data.datasets[1].data=state.series.dscr; chCoverage.update();
+    }
+
+    // Presets
+    let currentPreset = 'custom';
+    function applyPreset(key){
+      currentPreset=key; const set=(id,v)=>document.getElementById(id).value=v;
+      if(key==='soft'){ set('gdpBase',0.4); set('infl',0.5); set('baseRate',4.25); set('commShock',0);
+      } else if(key==='recession'){ set('gdpBase',-0.6); set('infl',0.3); set('baseRate',2.75); set('commShock',25);
+      } else if(key==='rateshock'){ set('gdpBase',0.2); set('infl',0.7); set('baseRate',6.0); set('commShock',0);
+      } else if(key==='supply'){ set('gdpBase',0.1); set('infl',0.9); set('baseRate',4.75); set('commShock',125); }
+    }
+
+    // Save/Load
+    function saveRun(){ localStorage.setItem('credit-sim-v1', JSON.stringify(state)); alert('Saved ✓'); }
+    function loadRun(){ const p=localStorage.getItem('credit-sim-v1'); if(!p) return alert('No saved run found'); Object.assign(state, JSON.parse(p)); repaintAll(); alert('Loaded ✓'); }
+
+    function autopilot(){
+      for(let i=0;i<(state.qMax-state.qNow);i++){
+        readInputs();
+        const lastLev = state.series.netLev.at(-1) || 2.8;
+        if(lastLev > (state.company.covLev - 0.3)){ document.getElementById('capexFlex').value=-2; document.getElementById('costOutBps').value=100; document.getElementById('buyback').value=0; document.getElementById('dividend').value=10; }
+        else { document.getElementById('capexFlex').value=-0.5; document.getElementById('costOutBps').value=50; document.getElementById('buyback').value=0; document.getElementById('dividend').value=20; }
+        quarterStep();
+      }
+    }
+
+    // Events
+    document.querySelectorAll('.preset').forEach(btn=>btn.addEventListener('click', e=>applyPreset(e.target.dataset.preset)));
+    document.getElementById('sectorSel').addEventListener('change', e=>applySector(e.target.value));
+    document.getElementById('btnDefaults').addEventListener('click', ()=>{ document.querySelectorAll('input').forEach(inp=>inp.dispatchEvent(new Event('change'))); resetState(); });
+    document.getElementById('btnStep').addEventListener('click', quarterStep);
+    document.getElementById('btnAuto').addEventListener('click', autopilot);
+    document.getElementById('btnUndo').addEventListener('click', ()=>{ if(state.hist.length<2) return; state.hist.pop(); const last=JSON.parse(state.hist.at(-1)); Object.assign(state,last); repaintAll(); });
+    document.getElementById('btnSave').addEventListener('click', saveRun);
+    document.getElementById('btnLoad').addEventListener('click', loadRun);
+
+    // Init
+    document.getElementById('qMax').textContent = state.qMax;
+    document.getElementById('year').textContent = new Date().getFullYear();
+    applySector('generic'); readInputs(); chartsInit(); resetState();
+  </script>
 </body>
 </html>
