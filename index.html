@@ -1,506 +1,383 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Credit Stress Simulator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <meta name="description" content="Interactive Credit Stress Simulator for teaching / demos. Single-file app for GitHub Pages." />
-  <style>
-    /* Dark Theme Setup: Black background, light text */
-    body {
-        background-color: #000000; /* Pure black background */
-        color: #ffffff; /* White text for contrast */
-    }
-    /* Adjust component backgrounds for dark theme */
-    .bg-white, .shadow, .bg-slate-50 {
-        background-color: #1a1a1a; /* Dark gray for cards/sections */
-        color: #ffffff;
-        border-color: #333333;
-    }
-    /* Specific overrides for contrast */
-    .text-gray-900, .text-gray-800, .text-slate-900 {
-        color: #f3f4f6; /* Light gray */
-    }
-    .text-gray-500, .text-gray-600 {
-        color: #a1a1aa; /* Muted gray */
-    }
-    input, select {
-        background-color: #333333 !important; /* Darker input fields */
-        border-color: #555555 !important;
-        color: #ffffff !important;
-    }
-    /* Custom style for selected companies in the picker */
-    .selected-company {
-        background-color: #4338ca; /* Indigo-700 equivalent */
-        color: white;
-    }
-    /* Subtle scrollbars + number input alignment */
-    input[type="number"] { text-align: right; }
-    .kpi { min-width: 12rem; }
-    .heatmap-cell { transition: background-color 0.3s ease; }
-    .heatmap-label { font-size: 0.75rem; }
-  </style>
-</head>
-<body class="bg-black text-white">
-  
-<header class="bg-gray-900 shadow">
-  <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-    <h1 class="text-3xl font-bold text-white">Credit Stress Simulator</h1>
-    <p class="mt-1 text-sm text-gray-400">
-      Interactive tool to model the impact of macroeconomic scenarios on a credit portfolio.
-    </p>
-  </div>
-</header>
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { motion } from "framer-motion";
+import { DollarSign, TrendingUp, Users, Briefcase, Bell } from "lucide-react";
+import React from "react";
 
-<main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-  <div class="space-y-6">
-    
-    <div class="bg-gray-800 p-6 shadow-md rounded-lg">
-      <h2 class="text-xl font-semibold text-white mb-4">Portfolio & Scenario Controls</h2>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        
-        <div class="md:col-span-1">
-          <label class="block text-sm font-medium text-gray-300 mb-2">Select Companies (Max 20)</label>
-          <div id="companyPicker" class="h-60 overflow-y-auto p-2 border border-gray-600 rounded-md bg-gray-900">
-            </div>
-          <p id="selectionStatus" class="mt-1 text-xs text-gray-400">0 companies selected. Click 'Run Simulation'.</p>
-        </div>
-        
-        <div class="md:col-span-1">
-          <label for="scenarioPreset" class="block text-sm font-medium text-gray-300">Select Preset</label>
-          <select id="scenarioPreset" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-600 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-            <option value="none">Custom Scenario</option>
-            <option value="rateHike">Fed Rate Hike (+200bps)</option>
-            <option value="oilShock">Oil Shock (+30%)</option>
-            <option value="downgradeWave">Sector Downgrade Wave</option>
-          </select>
-        </div>
-        
-        <div class="md:col-span-1">
-          <label for="rateHikeBps" class="block text-sm font-medium text-gray-300">Rate Shock (bps)</label>
-          <input type="number" id="rateHikeBps" value="0" class="mt-1 block w-full rounded-md border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 text-right">
-        </div>
+export default function Dashboard() {
+  // --- Config ---
+  const DEFAULT_TICKER = "NFLX";
+  const CIKS = {
+    NFLX: "0001065280",
+    AAPL: "0000320193",
+    MSFT: "0000789019",
+    AMZN: "0001018724",
+    GOOGL: "0001652044",
+  } as const;
 
-        <div class="md:col-span-1">
-          <label for="defaultMultiplier" class="block text-sm font-medium text-gray-300">Default Rate Multiplier</label>
-          <input type="number" id="defaultMultiplier" step="0.1" value="1.0" class="mt-1 block w-full rounded-md border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 text-right">
-        </div>
-      </div>
+  // Optional: FRED API Key (insert your key to avoid throttling)
+  const FRED_API_KEY = "YOUR_FRED_API_KEY"; // get one free at https://fred.stlouisfed.org/
 
-      <button onclick="runSimulation()" class="mt-6 w-full md:w-auto px-6 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-        Run Simulation
-      </button>
-    </div>
+  // --- State ---
+  const [ticker, setTicker] = React.useState<string>(DEFAULT_TICKER);
+  const [prices, setPrices] = React.useState<{date:string; close:number}[]>([]);
+  const [priceMeta, setPriceMeta] = React.useState<any>(null);
+  const [secFacts, setSecFacts] = React.useState<any>(null);
+  const [fred, setFred] = React.useState<{ t2y?: any[]; t10y?: any[]; hy?: any[]; ig?: any[] }>({});
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
 
-    <div class="bg-gray-800 p-6 shadow-md rounded-lg">
-      <h2 class="text-xl font-semibold text-white mb-4">Executive Summary KPIs</h2>
-      <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
-        
-        <div class="kpi bg-gray-900 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-red-500">
-          <dt class="text-sm font-medium text-gray-400 truncate">Portfolio PnL Impact</dt>
-          <dd id="kpiPnL" class="mt-1 text-3xl font-semibold text-white">$0.00M</dd>
-        </div>
-
-        <div class="kpi bg-gray-900 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-orange-500">
-          <dt class="text-sm font-medium text-gray-400 truncate">Stress VaR (99%)</dt>
-          <dd id="kpiVaR" class="mt-1 text-3xl font-semibold text-white">$0.00M</dd>
-        </div>
-
-        <div class="kpi bg-gray-900 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-red-600">
-          <dt class="text-sm font-medium text-gray-400 truncate">New Defaults (Count)</dt>
-          <dd id="kpiDefaults" class="mt-1 text-3xl font-semibold text-white">0</dd>
-        </div>
-        
-        <div class="kpi bg-gray-900 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-yellow-500">
-          <dt class="text-sm font-medium text-gray-400 truncate">Average Rating Migration</dt>
-          <dd id="kpiRatingMigration" class="mt-1 text-3xl font-semibold text-white">0.0 Notches</dd>
-        </div>
-
-        <div class="kpi bg-gray-900 overflow-hidden rounded-lg shadow-sm px-4 py-5 sm:p-6 border-l-4 border-green-500">
-          <dt class="text-sm font-medium text-gray-400 truncate">Covenant Breaches</dt>
-          <dd id="kpiCovenantBreaches" class="mt-1 text-3xl font-semibold text-white">0</dd>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        <div class="lg:col-span-1 bg-gray-800 p-6 shadow-md rounded-lg">
-            <h2 class="text-xl font-semibold text-white mb-4">PnL Driver Attribution ($M)</h2>
-            <div id="pnlAttribution" class="space-y-3 text-white">
-                <div class="flex justify-between border-b border-gray-600 pb-1">
-                    <span class="text-sm font-medium text-gray-300">Interest Rate Shock:</span>
-                    <span id="attrRate" class="text-sm font-semibold text-white">0.00</span>
-                </div>
-                <div class="flex justify-between border-b border-gray-600 pb-1">
-                    <span class="text-sm font-medium text-gray-300">Spread Widening:</span>
-                    <span id="attrSpread" class="text-sm font-semibold text-white">0.00</span>
-                </div>
-                <div class="flex justify-between border-b border-gray-600 pb-1">
-                    <span class="text-sm font-medium text-gray-300">Default Losses:</span>
-                    <span id="attrDefault" class="text-sm font-semibold text-red-500">0.00</span>
-                </div>
-                <div class="flex justify-between pt-2 border-t border-gray-500 font-bold">
-                    <span>Total PnL Impact:</span>
-                    <span id="attrTotal" class="text-white">0.00</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="lg:col-span-2 bg-gray-800 p-6 shadow-md rounded-lg">
-            <h2 class="text-xl font-semibold text-white mb-4">Watchlist (At-Risk Names & Covenant Breaches)</h2>
-            <ul id="watchlist" class="divide-y divide-gray-700 h-60 overflow-y-auto">
-                <li class="py-2 text-sm text-gray-400 italic">No portfolio selected. Select companies and run simulation.</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 gap-6">
-      
-      <div class="bg-gray-800 p-6 shadow-md rounded-lg">
-        <h2 class="text-xl font-semibold text-white mb-4">Sector-Rating Heatmap (Notional $M) - Post-Stress</h2>
-        <div id="heatmapContainer" class="p-2 border border-gray-600">
-            <div id="heatmap" class="grid grid-cols-6 gap-0.5">
-                <div class="heatmap-label font-bold text-gray-400 p-1">Sector</div>
-                <div class="heatmap-label font-bold text-gray-400 text-center p-1">AAA-A</div>
-                <div class="heatmap-label font-bold text-gray-400 text-center p-1">BBB</div>
-                <div class="heatmap-label font-bold text-gray-400 text-center p-1">BB</div>
-                <div class="heatmap-label font-bold text-gray-400 text-center p-1">B-CCC</div>
-                <div class="heatmap-label font-bold text-gray-400 text-center p-1">D</div>
-                </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-gray-900 p-6 shadow-md rounded-lg text-center">
-      <p class="text-gray-400">
-        *Future Feature: Generate One-Page Investment Committee (IC) Style Report.*
-      </p>
-    </div>
-
-  </div>
-</main>
-
-<script>
-  // --- 1. CORE DATA & CONSTANTS ---
-  const MAX_COMPANIES = 20;
-  let selectedCompanyNames = ['Global Auto Co.', 'Energy Explorer LLC']; // Default selection
-
-  // Full master list of companies with realistic credit data
-  const masterCompanyList = [
-    { name: "Global Auto Co.", sector: "Automotive", rating: "BBB", duration: 5, notional: 500, PD: 0.005, recovery: 0.40, spread: 250, leverage: 3.5, maxLeverage: 4.0, industry: 'Cyclical' },
-    { name: "Tech Services Inc.", sector: "Technology", rating: "A", duration: 3, notional: 800, PD: 0.002, recovery: 0.50, spread: 150, leverage: 2.1, maxLeverage: 3.0, industry: 'Stable' },
-    { name: "Regional Bank PLC", sector: "Financials", rating: "BB", duration: 6, notional: 300, PD: 0.015, recovery: 0.35, spread: 400, leverage: 4.8, maxLeverage: 5.0, industry: 'Cyclical' },
-    { name: "Energy Explorer LLC", sector: "Energy", rating: "B", duration: 7, notional: 200, PD: 0.030, recovery: 0.30, spread: 650, leverage: 5.5, maxLeverage: 6.0, industry: 'Cyclical' },
-    { name: "Consumer Goods Group", sector: "Consumer", rating: "AAA", duration: 4, notional: 700, PD: 0.001, recovery: 0.55, spread: 100, leverage: 1.5, maxLeverage: 3.5, industry: 'Stable' },
-    { name: "Pharma Innovations", sector: "Healthcare", rating: "AA", duration: 4, notional: 600, PD: 0.001, recovery: 0.50, spread: 120, leverage: 1.8, maxLeverage: 3.0, industry: 'Stable' },
-    { name: "Aero Defense Corp", sector: "Industrials", rating: "A", duration: 5, notional: 450, PD: 0.003, recovery: 0.45, spread: 180, leverage: 3.1, maxLeverage: 4.5, industry: 'Stable' },
-    { name: "Local Telecom Co.", sector: "Telecom", rating: "BBB", duration: 6, notional: 350, PD: 0.007, recovery: 0.40, spread: 300, leverage: 4.2, maxLeverage: 5.5, industry: 'Stable' },
-    { name: "Mining Resources Inc.", sector: "Materials", rating: "B", duration: 7, notional: 150, PD: 0.040, recovery: 0.25, spread: 700, leverage: 6.0, maxLeverage: 6.5, industry: 'Cyclical' },
-    { name: "Luxury Retail Outlet", sector: "Consumer", rating: "BB", duration: 3, notional: 250, PD: 0.018, recovery: 0.35, spread: 450, leverage: 5.1, maxLeverage: 4.5, industry: 'Cyclical' },
-    { name: "Software Giants LLC", sector: "Technology", rating: "AAA", duration: 2, notional: 900, PD: 0.001, recovery: 0.60, spread: 80, leverage: 1.0, maxLeverage: 2.5, industry: 'Stable' },
-    { name: "Regional Utility Co.", sector: "Utilities", rating: "A", duration: 8, notional: 550, PD: 0.002, recovery: 0.55, spread: 140, leverage: 2.8, maxLeverage: 4.0, industry: 'Stable' },
+  // --- Mock data retained for non-company widgets ---
+  const marketData = [
+    { name: "Jan", rates: 3.8, spreads: 120 },
+    { name: "Feb", rates: 4.0, spreads: 140 },
+    { name: "Mar", rates: 4.3, spreads: 160 },
   ];
-  const companyMap = masterCompanyList.reduce((map, company) => {
-    map[company.name] = company;
-    return map;
-  }, {});
-  
-  // Initialize portfolio
-  let currentPortfolio = [];
 
-  // Helper functions for rating conversion (unchanged)
-  const ratingToScore = { "AAA": 7, "AA": 6, "A": 5, "BBB": 4, "BB": 3, "B": 2, "CCC": 1, "D": 0 };
-  const scoreToRating = { 7: "AAA", 6: "AA", 5: "A", 4: "BBB", 3: "BB", 2: "B", 1: "CCC", 0: "D" };
-  const ratingToGroup = (rating) => {
-    const score = ratingToScore[rating];
-    if (score >= 5) return 'AAA-A';
-    if (score === 4) return 'BBB';
-    if (score === 3) return 'BB';
-    if (score >= 1) return 'B-CCC';
-    return 'D';
-  };
-  const ratingGroups = ['AAA-A', 'BBB', 'BB', 'B-CCC', 'D'];
+  const pipelineData = [
+    { name: "M&A", deals: 12 },
+    { name: "ECM", deals: 8 },
+    { name: "DCM", deals: 15 },
+    { name: "LevFin", deals: 10 },
+  ];
 
-  // Scenario Presets (unchanged)
-  const scenarioPresets = {
-    'rateHike': { rateHikeBps: 200, defaultMultiplier: 1.5, ratingShift: -1, sectorImpact: { 'Financials': -2, 'Consumer': -1, 'Automotive': -1 }, leverageIncrease: 0.5 },
-    'oilShock': { rateHikeBps: 50, defaultMultiplier: 2.5, ratingShift: 0, sectorImpact: { 'Energy': -3, 'Automotive': -2, 'Materials': -2 }, leverageIncrease: 0.3 },
-    'downgradeWave': { rateHikeBps: 0, defaultMultiplier: 1.8, ratingShift: -1, sectorImpact: { 'Financials': -1, 'Technology': -1, 'Consumer': -1 }, leverageIncrease: 0.4 }
-  };
+  const aiAlerts = [
+    { client: "Client X", alert: "Downgrade probability increased by 20% this week" },
+    { client: "Client Y", alert: "Maturity wall approaching in 2026, refinancing at +180bps" },
+    { client: "Client Z", alert: "Activist investor disclosed 5% stake yesterday" },
+  ];
 
-  // --- 2. PORTFOLIO SELECTION LOGIC ---
-  function toggleCompanySelection(companyName) {
-    const index = selectedCompanyNames.indexOf(companyName);
-    const button = document.getElementById(`btn-${companyName.replace(/\s/g, '-')}`);
-
-    if (index === -1) {
-      if (selectedCompanyNames.length < MAX_COMPANIES) {
-        selectedCompanyNames.push(companyName);
-        button.classList.add('selected-company');
-        button.classList.remove('bg-gray-700');
-      } else {
-        alert(`Maximum of ${MAX_COMPANIES} companies reached.`);
-      }
-    } else {
-      selectedCompanyNames.splice(index, 1);
-      button.classList.remove('selected-company');
-      button.classList.add('bg-gray-700');
+  // --- Helpers ---
+  function latestValueByTag(facts: any, tag: string) {
+    try {
+      const fact = facts?.facts?.["us-gaap"]?.[tag];
+      if (!fact) return null;
+      const units = Object.values(fact.units || {});
+      if (!units.length) return null;
+      const all: any[] = (units as any[]).flat().filter((x: any) => x?.val !== null);
+      all.sort((a, b) => new Date(b.end).getTime() - new Date(a.end).getTime());
+      return all[0] || null;
+    } catch (e) {
+      return null;
     }
-    
-    document.getElementById('selectionStatus').innerText = `${selectedCompanyNames.length} companies selected. Click 'Run Simulation'.`;
   }
 
-  function initializeCompanyPicker() {
-    const pickerEl = document.getElementById('companyPicker');
-    pickerEl.innerHTML = '';
-    
-    masterCompanyList.forEach(company => {
-      const button = document.createElement('button');
-      const isSelected = selectedCompanyNames.includes(company.name);
-      
-      button.id = `btn-${company.name.replace(/\s/g, '-')}`;
-      button.className = `w-full text-left px-2 py-1 my-0.5 rounded text-sm transition-colors ${isSelected ? 'selected-company' : 'bg-gray-700 hover:bg-gray-600'}`;
-      button.innerText = `${company.name} (${company.sector})`;
-      button.onclick = () => toggleCompanySelection(company.name);
-      
-      pickerEl.appendChild(button);
-    });
+  function fmtUSD(n?: number) {
+    if (n == null) return "—";
+    const abs = Math.abs(n);
+    const sign = n < 0 ? "-" : "";
+    if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2)}T`;
+    if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(2)}B`;
+    if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2)}M`;
+    return `${sign}${abs.toLocaleString()}`;
   }
 
-  // --- 3. SIMULATION LOGIC (Updated to use selected companies) ---
-  function runSimulation() {
-    // 1. Build current portfolio from selected names
-    currentPortfolio = selectedCompanyNames.map(name => companyMap[name]);
+  // --- Effects: Fetch Yahoo Finance prices + SEC facts ---
+  React.useEffect(() => {
+    async function fetchCompany(tkr: string) {
+      setLoading(true);
+      setError("");
+      try {
+        // 1) Yahoo Finance price history
+        const yf = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tkr}?range=6mo&interval=1d`);
+        const yfJson = await yf.json();
+        const r = yfJson?.chart?.result?.[0];
+        if (r) {
+          const tzOffset = r.meta.gmtoffset || 0;
+          const series = r.timestamp
+            .map((t: number, idx: number) => ({
+              date: new Date((t + tzOffset) * 1000).toISOString().slice(0, 10),
+              close: r.indicators.quote[0].close[idx],
+            }))
+            .filter((d: any) => d.close != null);
+          setPrices(series);
+          setPriceMeta(r.meta);
+        } else {
+          setPrices([]);
+          setPriceMeta(null);
+        }
 
-    if (currentPortfolio.length === 0) {
-        alert("Please select at least one company to run the simulation.");
-        return;
-    }
-    
-    const preset = document.getElementById('scenarioPreset').value;
-    let rateHikeBps = parseFloat(document.getElementById('rateHikeBps').value);
-    let defaultMultiplier = parseFloat(document.getElementById('defaultMultiplier').value);
-    
-    let baseRatingShift = 0;
-    let sectorRatingImpact = {};
-    let leverageIncrease = 0;
-
-    if (preset !== 'none' && scenarioPresets[preset]) {
-      const p = scenarioPresets[preset];
-      rateHikeBps = p.rateHikeBps;
-      defaultMultiplier = p.defaultMultiplier;
-      baseRatingShift = p.ratingShift;
-      sectorRatingImpact = p.sectorImpact;
-      leverageIncrease = p.leverageIncrease;
-    }
-
-    const marketRateDelta = rateHikeBps / 10000;
-    
-    let totalPnLImpact = 0;
-    let totalRatePnL = 0;
-    let totalSpreadPnL = 0;
-    let totalDefaultLoss = 0;
-    let newDefaults = 0;
-    let totalNotchShift = 0;
-    let covenantBreaches = 0;
-    let watchlistNames = [];
-    const heatmapData = {};
-    const sectors = [...new Set(currentPortfolio.map(a => a.sector))];
-    sectors.forEach(s => heatmapData[s] = {});
-    ratingGroups.forEach(g => sectors.forEach(s => heatmapData[s][g] = 0));
-
-
-    const stressedPortfolio = currentPortfolio.map(asset => {
-      // 1. Rating Migration & Spread Impact
-      const sectorShift = sectorRatingImpact[asset.sector] || 0;
-      const totalShiftScore = Math.max(0, ratingToScore[asset.rating] + baseRatingShift + sectorShift); 
-      const newRating = scoreToRating[totalShiftScore] || 'D';
-      totalNotchShift += (totalShiftScore - ratingToScore[asset.rating]);
-
-      const ratingDrop = ratingToScore[asset.rating] - totalShiftScore;
-      // Spread widening based on rating drop
-      const newSpread = asset.spread * (1 + ratingDrop * 0.15); 
-      
-      const duration = asset.duration || 5; 
-      const spreadDelta = (newSpread - asset.spread) / 10000;
-
-      // PnL 1: Rate Shock Component
-      const ratePnL = -duration * asset.notional * marketRateDelta;
-      totalRatePnL += ratePnL;
-      
-      // PnL 2: Spread Widening Component
-      const spreadPnL = -duration * asset.notional * spreadDelta;
-      totalSpreadPnL += spreadPnL;
-      
-      // 2. Default & Loss Calculation
-      const stressedPD = asset.PD * defaultMultiplier;
-      const lossGivenDefault = asset.notional * (1 - asset.recovery);
-      const defaultLoss = lossGivenDefault * stressedPD; // Expected Loss
-
-      // PnL 3: Default Loss Component (Expected Loss)
-      totalDefaultLoss += defaultLoss;
-      
-      const pnl = ratePnL + spreadPnL - defaultLoss; 
-      totalPnLImpact += pnl;
-      
-      const isDefault = stressedPD >= 0.10;
-      if (isDefault) {
-        newDefaults += 1;
-      }
-      
-      // 3. Covenant Headroom Check
-      const stressedLeverage = (asset.leverage || 4.0) + leverageIncrease;
-      const isBreached = stressedLeverage > (asset.maxLeverage || 5.0);
-      if (isBreached) {
-          covenantBreaches += 1;
-      }
-
-      // 4. Heatmap Data Aggregation
-      const group = ratingToGroup(newRating);
-      heatmapData[asset.sector][group] += asset.notional;
-
-      // Watchlist Check: Low rating AND high expected loss OR covenant breach
-      if (totalShiftScore <= ratingToScore['BB'] || isBreached) {
-        let reason = [];
-        if (totalShiftScore <= ratingToScore['BB']) reason.push('Rating D/G');
-        if (isBreached) reason.push('Covenant Breach');
-
-        watchlistNames.push({ 
-            name: asset.name, 
-            rating: newRating, 
-            pnl: pnl.toFixed(2), 
-            leverage: stressedLeverage.toFixed(2), 
-            reason: reason.join(' / ') 
+        // 2) SEC Company Facts (official)
+        const cik = (CIKS as any)[tkr];
+        if (!cik) throw new Error(`No CIK mapping for ${tkr}`);
+        const sec = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+          headers: {
+            "User-Agent": "IB-Dashboard (your-email@example.com)",
+            Accept: "application/json",
+          },
         });
+        if (!sec.ok) throw new Error(`SEC ${sec.status}`);
+        const secJson = await sec.json();
+        setSecFacts(secJson);
+      } catch (e: any) {
+        console.error(e);
+        setError("Live data fetch failed (likely CORS or throttling). Using placeholders. See code comments.");
+      } finally {
+        setLoading(false);
       }
-
-      return { ...asset, newRating, stressedPD, pnl, stressedLeverage, isBreached };
-    });
-
-    // --- 4. KPI & DASHBOARD UPDATE ---
-    const totalPortfolioNotional = currentPortfolio.reduce((sum, asset) => sum + asset.notional, 0);
-
-    const stressVaR = totalDefaultLoss + Math.abs(totalRatePnL + totalSpreadPnL) * 1.5;
-    
-    document.getElementById('kpiPnL').innerText = `${totalPnLImpact < 0 ? '-' : ''}$${Math.abs(totalPnLImpact).toFixed(2)}M`;
-    document.getElementById('kpiVaR').innerText = `$${stressVaR.toFixed(2)}M`;
-    document.getElementById('kpiDefaults').innerText = newDefaults;
-    document.getElementById('kpiRatingMigration').innerText = currentPortfolio.length > 0 ? `${(-totalNotchShift / currentPortfolio.length).toFixed(1)} Notches` : '0.0 Notches';
-    document.getElementById('kpiCovenantBreaches').innerText = covenantBreaches;
-
-    // PnL Attribution Update
-    document.getElementById('attrRate').innerText = totalRatePnL.toFixed(2);
-    document.getElementById('attrSpread').innerText = totalSpreadPnL.toFixed(2);
-    document.getElementById('attrDefault').innerText = `(${totalDefaultLoss.toFixed(2)})`;
-    document.getElementById('attrTotal').innerText = totalPnLImpact.toFixed(2);
-    
-    // Watchlist Update
-    updateWatchlist(watchlistNames);
-
-    // Heatmap Update
-    renderHeatmap(sectors, heatmapData, totalPortfolioNotional);
-  }
-
-  // --- 5. VISUALIZATION AND AUXILIARY FUNCTIONS ---
-
-  function updateWatchlist(watchlistNames) {
-    const watchlistEl = document.getElementById('watchlist');
-    watchlistEl.innerHTML = ''; 
-    if (watchlistNames.length === 0 && selectedCompanyNames.length > 0) {
-      watchlistEl.innerHTML = '<li class="py-2 text-sm text-gray-400 italic">All selected names are healthy post-stress.</li>';
-    } else if (selectedCompanyNames.length === 0) {
-        watchlistEl.innerHTML = '<li class="py-2 text-sm text-gray-400 italic">No portfolio selected. Select companies and run simulation.</li>';
-    } else {
-        watchlistNames.forEach(item => {
-            const li = document.createElement('li');
-            li.className = 'py-2 flex justify-between items-center';
-            const lossColor = parseFloat(item.pnl) < 0 ? 'text-red-500' : 'text-green-500';
-            li.innerHTML = `
-                <div>
-                    <span class="font-medium">${item.name} (${item.rating})</span>
-                    <span class="text-xs text-gray-400 ml-2">| ${item.reason}</span>
-                </div>
-                <div class="text-right">
-                    <span class="text-xs text-gray-500 block">Lev: ${item.leverage}</span>
-                    <span class="text-sm ${lossColor} block">${item.pnl}M PnL</span>
-                </div>
-            `;
-            watchlistEl.appendChild(li);
-        });
-    }
-  }
-
-  function getHeatmapColor(value, maxNotional) {
-    if (value === 0) return 'bg-gray-700';
-    const intensity = value / maxNotional;
-    if (intensity < 0.1) return 'bg-blue-900 text-gray-300';
-    if (intensity < 0.3) return 'bg-blue-700 text-white';
-    if (intensity < 0.6) return 'bg-blue-600 text-white';
-    return 'bg-blue-400 text-gray-900';
-  }
-
-  function renderHeatmap(sectors, heatmapData, totalPortfolioNotional) {
-    const heatmapEl = document.getElementById('heatmap');
-    // Clear previous content
-    heatmapEl.innerHTML = `
-        <div class="heatmap-label font-bold text-gray-400 p-1">Sector</div>
-        ${ratingGroups.map(g => `<div class="heatmap-label font-bold text-gray-400 text-center p-1">${g}</div>`).join('')}
-    `;
-
-    if (totalPortfolioNotional === 0) {
-        // Show empty state if no companies are selected
-        const emptyRow = document.createElement('div');
-        emptyRow.className = 'md:col-span-6 p-4 text-center text-gray-400 italic';
-        emptyRow.innerText = 'No data to display. Select companies and run simulation.';
-        heatmapEl.appendChild(emptyRow);
-        heatmapEl.style.gridTemplateColumns = '1fr';
-        return;
     }
 
-    const maxNotional = Math.max(...sectors.flatMap(s => ratingGroups.map(g => heatmapData[s][g])));
+    fetchCompany(ticker);
+  }, [ticker]);
 
-    sectors.forEach(sector => {
-      const sectorLabel = document.createElement('div');
-      sectorLabel.className = 'heatmap-label p-1 font-semibold';
-      sectorLabel.innerText = sector;
-      heatmapEl.appendChild(sectorLabel);
-
-      ratingGroups.forEach(group => {
-        const value = heatmapData[sector][group] || 0;
-        const colorClass = getHeatmapColor(value, maxNotional);
-        
-        const cell = document.createElement('div');
-        cell.className = `heatmap-cell p-1 text-center font-bold rounded ${colorClass}`;
-        cell.title = `${sector} / ${group}: $${value.toFixed(0)}M`;
-        cell.innerText = value > 0 ? value.toFixed(0) : '-';
-        heatmapEl.appendChild(cell);
-      });
-    });
-    
-    heatmapEl.style.gridTemplateColumns = `repeat(${ratingGroups.length + 1}, 1fr)`;
-  }
-
-
-  // --- 6. INITIALIZATION ---
-  document.addEventListener('DOMContentLoaded', () => {
-    initializeCompanyPicker();
-    runSimulation(); // Run with default selection on load
-    
-    const presetSelect = document.getElementById('scenarioPreset');
-    presetSelect.addEventListener('change', (event) => {
-      const preset = event.target.value;
-      if (preset !== 'none' && scenarioPresets[preset]) {
-        document.getElementById('rateHikeBps').value = scenarioPresets[preset].rateHikeBps;
-        document.getElementById('defaultMultiplier').value = scenarioPresets[preset].defaultMultiplier;
-      } else {
-        document.getElementById('rateHikeBps').value = 0;
-        document.getElementById('defaultMultiplier').value = 1.0;
+  // Fetch FRED macro curves & spreads (UST 2Y/10Y, HY OAS, IG OAS)
+  React.useEffect(() => {
+    async function fetchFred(series: string) {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${FRED_API_KEY}&file_type=json&observation_start=${new Date(new Date().setFullYear(new Date().getFullYear()-1)).toISOString().slice(0,10)}`;
+      const res = await fetch(url);
+      return res.ok ? res.json() : null;
+    }
+    async function go() {
+      try {
+        const [t2y, t10y, hy, ig] = await Promise.all([
+          fetchFred("DGS2"), // 2Y UST
+          fetchFred("DGS10"), // 10Y UST
+          fetchFred("BAMLH0A0HYM2"), // ICE BofA US High Yield OAS
+          fetchFred("BAMLC0A0CM"), // ICE BofA US Corporate (IG) OAS
+        ]);
+        setFred({ t2y: t2y?.observations, t10y: t10y?.observations, hy: hy?.observations, ig: ig?.observations });
+      } catch (e) {
+        console.warn("FRED fetch failed", e);
       }
-    });
-  });
-</script>
-</body>
-</html>
+    }
+    if (FRED_API_KEY && FRED_API_KEY !== "YOUR_FRED_API_KEY") go();
+  }, []);
+
+  // --- Derived fundamentals from SEC ---
+  const rev = latestValueByTag(secFacts, "Revenues");
+  const ni = latestValueByTag(secFacts, "NetIncomeLoss");
+  const assets = latestValueByTag(secFacts, "Assets");
+  const liab = latestValueByTag(secFacts, "Liabilities");
+  const equity = latestValueByTag(secFacts, "StockholdersEquity");
+
+  const lastClose = prices.length ? prices[prices.length - 1].close : null;
+  const prevClose = prices.length > 1 ? prices[prices.length - 2].close : null;
+  const dayChg = lastClose != null && prevClose != null ? ((lastClose - prevClose) / prevClose) * 100 : null;
+
+  // Convert FRED obs to chart data
+  const fredSeries = (obs?: any[]) =>
+    (obs || [])
+      .filter((o) => o.value !== ".")
+      .map((o) => ({ date: o.date, value: Number(o.value) }));
+
+  return (
+    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Controls */}
+      <div className="col-span-3 flex items-center gap-3">
+        <label className="text-sm text-gray-600">Ticker</label>
+        <select
+          className="border rounded-xl px-3 py-2 text-sm"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value)}
+        >
+          {Object.keys(CIKS).map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
+        {loading && <span className="text-xs text-gray-500">Loading {ticker}…</span>}
+        {error && <span className="text-xs text-yellow-700">{error}</span>}
+      </div>
+
+      {/* Company Snapshot */}
+      <Card className="col-span-3">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-2">🏢 Company Snapshot — {ticker}</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex flex-col"><span className="text-xs text-gray-500">Last Close</span><span className="text-lg font-semibold">{lastClose ? `$${lastClose.toFixed(2)}` : "—"}</span></div>
+            <div className="flex flex-col"><span className="text-xs text-gray-500">Day Change</span><span className={`text-lg font-semibold ${dayChg! > 0 ? "text-green-600" : dayChg! < 0 ? "text-red-600" : ""}`}>{dayChg != null ? `${dayChg.toFixed(2)}%` : "—"}</span></div>
+            <div className="flex flex-col"><span className="text-xs text-gray-500">Market Cap*</span><span className="text-lg font-semibold">{priceMeta?.marketCap ? fmtUSD(priceMeta.marketCap) : "—"}</span></div>
+            <div className="flex flex-col"><span className="text-xs text-gray-500">Price Currency</span><span className="text-lg font-semibold">{priceMeta?.currency || "—"}</span></div>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">*From Yahoo Finance meta when available. Data shown is for {ticker}.</p>
+          <div className="mt-4" style={{ width: "100%", height: 240 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={prices}>
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Line type="monotone" dataKey="close" stroke="#111827" name="Close" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SEC Fundamentals */}
+      <Card className="col-span-3">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🏛️ SEC Fundamentals (Official filings)</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Revenue (latest)</div><div className="text-lg font-semibold">{fmtUSD(rev?.val)}</div><div className="text-[10px] text-gray-400">Period end: {rev?.end || "—"}</div></div>
+            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Net Income (latest)</div><div className="text-lg font-semibold">{fmtUSD(ni?.val)}</div><div className="text-[10px] text-gray-400">Period end: {ni?.end || "—"}</div></div>
+            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Assets</div><div className="text-lg font-semibold">{fmtUSD(assets?.val)}</div><div className="text-[10px] text-gray-400">{assets?.end || "—"}</div></div>
+            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Liabilities</div><div className="text-lg font-semibold">{fmtUSD(liab?.val)}</div><div className="text-[10px] text-gray-400">{liab?.end || "—"}</div></div>
+            <div className="p-3 rounded-2xl bg-gray-50"><div className="text-xs text-gray-500">Equity</div><div className="text-lg font-semibold">{fmtUSD(equity?.val)}</div><div className="text-[10px] text-gray-400">{equity?.end || "—"}</div></div>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">Data source: <code>data.sec.gov</code> CompanyFacts API. Replace the <code>User-Agent</code> header with your email/firm per SEC guidance.</p>
+        </CardContent>
+      </Card>
+
+      {/* Macro & Spreads (FRED) */}
+      <Card className="col-span-3">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-2">🌐 Macro Strip — UST & Credit Spreads (FRED)</h2>
+          {!FRED_API_KEY || FRED_API_KEY === "YOUR_FRED_API_KEY" ? (
+            <p className="text-xs text-yellow-700 mb-2">Add your FRED API key in code to enable live macro charts.</p>
+          ) : null}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div className="text-sm font-semibold mb-2">US 2Y vs 10Y Treasury Yield</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={fredSeries(fred.t2y)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="value" stroke="#2563eb" name="2Y" />
+                </LineChart>
+              </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={fredSeries(fred.t10y)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="value" stroke="#16a34a" name="10Y" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <div className="text-sm font-semibold mb-2">ICE BofA OAS — HY vs IG</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={fredSeries(fred.hy)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="value" stroke="#ef4444" name="HY OAS (bps)" />
+                </LineChart>
+              </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={fredSeries(fred.ig)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="value" stroke="#f59e0b" name="IG OAS (bps)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Client Pipeline (kept) */}
+      <Card>
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🤝 Client Pipeline</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={pipelineData}>
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="deals" fill="#f97316" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Sector Heatmap (kept) */}
+      <Card className="col-span-2">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🔥 Sector Heatmap</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { sector: "Tech", status: "Hot" },
+              { sector: "Energy", status: "Warm" },
+              { sector: "Healthcare", status: "Hot" },
+              { sector: "Retail", status: "Cold" },
+            ].map((s, i) => (
+              <motion.div key={i} whileHover={{ scale: 1.05 }} className="p-4 rounded-2xl shadow bg-gray-50 text-center">
+                <p className="font-semibold">{s.sector}</p>
+                <p className={`text-sm ${s.status === "Hot" ? "text-red-600" : s.status === "Cold" ? "text-blue-600" : "text-yellow-600"}`}>{s.status}</p>
+              </motion.div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Capital Structure Monitor (kept) */}
+      <Card>
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🏦 Capital Structure Risk</h2>
+          <ul className="space-y-2">
+            <li>⚠️ Client A: Refi cliff in 2026</li>
+            <li>⚠️ Client B: Net Leverage 6.2x</li>
+            <li>✅ Client C: IG Stable</li>
+            <li>⚠️ Client D: Rating under review</li>
+          </ul>
+        </CardContent>
+      </Card>
+
+      {/* Team & Revenue Performance (kept) */}
+      <Card>
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">📈 Team & Revenue</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center space-x-2">
+              <DollarSign className="text-green-600" />
+              <span>$52m YTD Fees</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="text-blue-600" />
+              <span>12 Mandates Won</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Users className="text-purple-600" />
+              <span>Team Utilization: 87%</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Briefcase className="text-orange-600" />
+              <span>Fee Wallet: +8% vs peers</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* AI-Powered Alerts with Actions */}
+      <Card className="col-span-3">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🔔 AI-Powered Alerts</h2>
+          <ul className="space-y-3">
+            {aiAlerts.map((a, i) => (
+              <li key={i} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50">
+                <div className="flex items-start gap-2">
+                  <Bell className="text-red-600 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">{a.client}</div>
+                    <div className="text-sm">{a.alert}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button className="text-xs">Schedule CFO Call</Button>
+                  <Button className="text-xs">Draft Client Note</Button>
+                  <Button className="text-xs">Open Pitch Template</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      {/* Scenario Simulation (kept) */}
+      <Card className="col-span-3">
+        <CardContent>
+          <h2 className="text-xl font-bold mb-4">🔮 Scenario Simulator</h2>
+          <p className="mb-4 text-sm">Adjust assumptions and see impact on clients’ WACC, leverage, and coverage ratios in real time.</p>
+          <Button className="mr-4">+100bps Rates</Button>
+          <Button className="mr-4">+50bps Spreads</Button>
+          <Button>-5% FX</Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
