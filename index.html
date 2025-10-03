@@ -50,6 +50,7 @@
   <div>
     <h1>Sector Stress Toggle — Credit Simulator</h1>
     <div class="sub">Live macro via FRED • Allocate across sectors • Minimize default risk while hitting a yield target</div>
+    <div id="status" class="sub" style="margin-top:6px;color:#9bd5ff"></div>
   </div>
   <div class="row">
     <span class="pill">v1.0</span>
@@ -211,8 +212,24 @@ function sigmoid(x){ return 1/(1+Math.exp(-x)); }
 function clamp(x,a,b){ return Math.min(b, Math.max(a,x)); }
 
 /********************** FRED **********************/
-async function fetchFredLatest(seriesId){
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=2`;
+async function fetchFredLatest(seriesId, limit=2){
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=${limit}`;
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error("FRED fetch failed: "+seriesId+" ("+r.status+")");
+  const j = await r.json();
+  const obs = (j.observations||[]).filter(o=>o.value!==".");
+  if(!obs.length) throw new Error("No observations for "+seriesId);
+  return obs.map(o=>parseFloat(o.value));
+}
+
+async function getCpiYoY(){
+  // Fetch 13 months to compute YoY = (latest / value_12m_ago - 1)*100
+  const vals = await fetchFredLatest(FRED_SERIES.cpi, 13);
+  const latest = vals[0];
+  const prev12 = vals[vals.length-1] ?? latest;
+  if(!latest || !prev12) throw new Error('CPI series insufficient data');
+  return ((latest/prev12 - 1)*100);
+}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=2`;
   const r = await fetch(url);
   if(!r.ok) throw new Error("FRED fetch failed: "+seriesId);
   const j = await r.json();
@@ -222,21 +239,28 @@ async function fetchFredLatest(seriesId){
 }
 
 async function refreshLiveMacros(){
+  const status = document.getElementById('status');
   try{
-    const [ff, cpi, gdp, oas] = await Promise.all([
+    status.textContent = 'Fetching live macros from FRED…';
+    const [[ff],[gdp],[oas], cpiYoY] = await Promise.all([
       fetchFredLatest(FRED_SERIES.fedFunds),
-      fetchFredLatest(FRED_SERIES.cpi),
       fetchFredLatest(FRED_SERIES.realGdpYoY),
       fetchFredLatest(FRED_SERIES.hyOAS),
+      getCpiYoY(),
     ]);
     liveMacro.fedFunds = ff; // %
-    // CPI is index level; approximate YoY by difference vs 12m ago if available would be better; we use latest monthly annualized if API not providing YoY directly
-    // For simplicity, FRED series A191RL1Q225SBEA is already YoY for real GDP
-    liveMacro.cpiYoY = cpi; // Treat as level; if very large, user can offset
-    liveMacro.gdpYoY = gdp; // %
-    liveMacro.hyOAS = oas*100; // Some series return percent; normalize to bps if needed
-    // If hyOAS unrealistic (e.g., 3.5), detect and convert
-    if(liveMacro.hyOAS < 20){ liveMacro.hyOAS = oas * 100; }
+    liveMacro.cpiYoY = cpiYoY; // computed YoY
+    liveMacro.gdpYoY = gdp; // % already YoY
+    // hyOAS can be in %, normalize to bps if needed
+    liveMacro.hyOAS = (oas < 20 ? oas*100 : oas);
+    status.textContent = 'Live macros loaded ✓';
+  }catch(e){
+    console.warn(e);
+    status.style.color = '#f8d27a';
+    status.textContent = 'Live pull failed – using offline defaults. Toggle off "Use live FRED data" or try again.';
+    document.getElementById('useLive').checked = false;
+  }
+}
   }catch(e){
     console.warn(e);
   }
