@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sector Stress Toggle — Credit Simulator (v1)</title>
+  <title>Sector Stress Toggle — Credit Simulator (SEC + Netlify Proxy)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
@@ -12,9 +12,10 @@
     :root{--bg:#0b1220;--card:#111a2b;--muted:#91a3c4;--text:#f1f5ff;--line:#1d2a48;--accent:#6ea8fe;--good:#2ecc71;--bad:#ff6b6b;--warn:#f7c948}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    header{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}
+    .topbar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}
     h1{margin:0;font-size:20px;font-weight:800}
     .sub{font-size:12px;color:var(--muted)}
+    .status{margin-top:6px;color:#9bd5ff}
     .wrap{max-width:1200px;margin:0 auto;padding:16px}
     .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
     @media(max-width:980px){.grid{grid-template-columns:1fr}}
@@ -24,6 +25,7 @@
     .pill{background:#0e1830;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted)}
     input,select,button{font:inherit}
     input[type=number],select{background:#0e1830;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px 10px}
+    input.num{width:110px}
     input[type=range]{width:200px}
     button{background:linear-gradient(180deg,#2b56f0,#2447c8);border:0;color:#fff;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
     button.ghost{background:transparent;border:1px solid #2f406a;color:#cfe0ff}
@@ -35,17 +37,20 @@
     .kpi>div{background:#0e1830;border:1px solid var(--line);border-radius:12px;padding:10px}
     .kpi .v{font-size:20px;font-weight:800}
     .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+    .mt{margin-top:10px}
+    .macros>div,.hedges>div{min-width:220px}
+    code.block{display:block;white-space:pre;overflow:auto;background:#0e1830;border:1px solid var(--line);border-radius:8px;padding:10px;color:#cfe0ff}
   </style>
 </head>
 <body>
-<header>
+<header class="topbar">
   <div>
     <h1>Sector Stress Toggle — Credit Simulator</h1>
-    <div class="sub">Live FRED macros • Sector allocations • Hedge toggles • Win if PD < 5% & Yield ≥ 6%</div>
-    <div id="status" class="sub" style="margin-top:6px;color:#9bd5ff"></div>
+    <div class="sub">Live FRED macros • SEC company mapper via Netlify proxy • Win if PD < 5% &amp; Yield ≥ target</div>
+    <div id="status" class="sub status"></div>
   </div>
   <div class="row">
-    <span class="pill">v1.0</span>
+    <span class="pill">v1.2 (SEC)</span>
     <button id="exportBtn" class="ghost" title="Download results as CSV">Export CSV</button>
     <button id="shareBtn" class="ghost" title="Copy a permalink with your settings">Share</button>
   </div>
@@ -53,14 +58,15 @@
 
 <div class="wrap">
   <div class="grid">
+    <!-- Controls -->
     <div class="card">
       <div class="title">1) Macros</div>
       <div class="row" style="margin-bottom:6px">
         <label><input type="checkbox" id="useLive" checked> Use live FRED data</label>
-        <span class="pill">Key in code: FEDFUNDS • CPIAUCSL • A191RL1Q225SBEA • BAMLH0A0HYM2 • DCOILWTICO</span>
+        <span class="pill">FEDFUNDS • CPIAUCSL • A191RL1Q225SBEA • BAMLH0A0HYM2 • DCOILWTICO</span>
       </div>
       <div class="row"><span class="pill">If live is ON, sliders are offsets to live values</span></div>
-      <div class="row" style="margin-top:8px;gap:18px">
+      <div class="row macros">
         <div>
           <label>Fed Funds (%, annual)</label><br>
           <input type="range" id="ffOffset" min="-2" max="2" value="0" step="0.25"> <span id="ffVal" class="pill"></span>
@@ -83,9 +89,9 @@
         </div>
       </div>
 
-      <div class="title" style="margin-top:14px">2) Sectors & Allocations</div>
+      <div class="title mt">2) Sectors &amp; Allocations</div>
       <div class="sub">Edit metrics if needed. Allocations must sum to 100%.</div>
-      <table id="sectorTable" style="margin-top:6px">
+      <table id="sectorTable" class="mt">
         <thead>
           <tr>
             <th>Sector</th>
@@ -99,13 +105,13 @@
         </thead>
         <tbody></tbody>
       </table>
-      <div class="row" style="margin-top:8px">
+      <div class="row mt">
         <button id="rebalanceBtn">Normalize Allocations</button>
         <button id="resetBtn" class="ghost">Reset Defaults</button>
       </div>
 
-      <div class="title" style="margin-top:14px">3) Hedges & Targets</div>
-      <div class="row" style="gap:18px">
+      <div class="title mt">3) Hedges &amp; Targets</div>
+      <div class="row hedges">
         <div>
           <label>Rate Hedge (% of rate move hedged)</label><br>
           <input type="range" id="rateHedge" min="0" max="100" step="5" value="0"> <span id="rateHedgeVal" class="pill"></span>
@@ -120,26 +126,71 @@
         </div>
         <div>
           <label>Yield Target (%)</label><br>
-          <input type="number" id="yieldTarget" value="6.0" step="0.25" style="width:100px">
+          <input type="number" id="yieldTarget" value="6.0" step="0.25" class="num">
         </div>
       </div>
 
-      <div class="row" style="margin-top:12px">
+      <div class="row mt">
         <button id="simulateBtn">Run Simulation</button>
         <button id="optimizeBtn" class="ghost">Suggest Optimal Mix</button>
       </div>
     </div>
 
+    <!-- Company Mapper + Scenarios -->
+    <div class="card">
+      <div class="title">Company Mapper (SEC)</div>
+      <div class="sub">Enter a ticker → fetch from SEC (via Netlify proxy) → apply to a sector row.</div>
+      <div class="row mt">
+        <input id="tickerInput" placeholder="e.g., PEP, SLB, M, AAPL" class="num" style="width:160px">
+        <select id="mapSector"></select>
+        <button id="fetchTickerBtn">Fetch &amp; Map</button>
+      </div>
+      <div id="tickerStatus" class="sub mt"></div>
+      <div class="row mt">
+        <div>
+          <label>Override Debt/EBITDA</label><br>
+          <input type="number" id="ovrLev" step="0.1" value="3.0" class="num">
+        </div>
+        <div>
+          <label>Override EBITDA %</label><br>
+          <input type="number" id="ovrEbitda" step="0.5" value="18" class="num">
+        </div>
+        <div>
+          <label>Override Avg Interest %</label><br>
+          <input type="number" id="ovrRate" step="0.1" value="6.0" class="num">
+        </div>
+        <div>
+          <label>Oil Sensitivity (0-1)</label><br>
+          <input type="number" id="ovrOil" step="0.1" value="0.2" class="num">
+        </div>
+        <div>
+          <label>Cyclicity (0-1)</label><br>
+          <input type="number" id="ovrCyc" step="0.1" value="0.5" class="num">
+        </div>
+        <button id="applyOverridesBtn" class="ghost">Apply Overrides to Selected Sector</button>
+      </div>
+
+      <div class="title mt">Scenario Presets</div>
+      <div class="row">
+        <button class="ghost" data-scn="soft">Soft Landing</button>
+        <button class="ghost" data-scn="mild">Mild Recession</button>
+        <button class="ghost" data-scn="oilshock">Oil Shock</button>
+        <button class="ghost" data-scn="credit">Credit Crunch</button>
+      </div>
+      <div class="sub mt">Presets nudge macro offsets and hedges; you can still tweak sliders after.</div>
+    </div>
+
+    <!-- Results -->
     <div class="card">
       <div class="title">Results</div>
       <div class="kpi">
-        <div><div class="sub">Portfolio Yield</div><div class="v" id="kpiYield">—</div><div class="sub">Wtd avg across sectors</div></div>
+        <div><div class="sub">Portfolio Yield</div><div class="v" id="kpiYield">—</div><div class="sub">Weighted avg across sectors</div></div>
         <div><div class="sub">Portfolio PD (1y)</div><div class="v" id="kpiPD">—</div><div class="sub">Weighted default probability</div></div>
         <div><div class="sub">IRR vs Benchmark</div><div class="v" id="kpiIRR">—</div><div class="sub">Benchmark ≈ rf + OAS/100</div></div>
-        <div><div class="sub">Status</div><div class="v" id="kpiStatus">—</div><div class="sub">Win if PD < 5% & Yield ≥ target</div></div>
+        <div><div class="sub">Status</div><div class="v" id="kpiStatus">—</div><div class="sub">Win if PD < 5% &amp; Yield ≥ target</div></div>
       </div>
-      <canvas id="chart" height="180" style="margin-top:12px"></canvas>
-      <table id="outTable" style="margin-top:8px">
+      <canvas id="chart" height="180" class="mt"></canvas>
+      <table id="outTable" class="mt">
         <thead><tr>
           <th>Sector</th>
           <th class="right">Alloc %</th>
@@ -151,257 +202,117 @@
         </tr></thead>
         <tbody></tbody>
       </table>
-      <div class="sub" style="margin-top:8px">Rating: <span id="rating">—</span></div>
+      <div class="sub mt">Rating: <span id="rating">—</span></div>
     </div>
   </div>
 
-  <div class="card" style="margin-top:16px">
-    <div class="title">Model Notes</div>
+  <div class="card mt">
+    <div class="title">Model Notes + Proxy Snippets</div>
     <ul class="sub">
-      <li>Data (live via FRED): Fed Funds (<code>FEDFUNDS</code>), CPI level (<code>CPIAUCSL</code>, computed YoY), Real GDP YoY (<code>A191RL1Q225SBEA</code>), HY OAS (<code>BAMLH0A0HYM2</code>), Oil WTI (<code>DCOILWTICO</code>).</li>
-      <li>Stress propagation (editable in code): ΔEBITDA% = −α₁·ΔCPI − α₂·OAS/100 − α₃·max(0, −GDP) ± oilSensitivity·ΔOil.</li>
+      <li>FRED: Fed Funds (<code>FEDFUNDS</code>), CPI level (<code>CPIAUCSL</code>) → YoY, Real GDP YoY (<code>A191RL1Q225SBEA</code>), HY OAS (<code>BAMLH0A0HYM2</code>), WTI Oil (<code>DCOILWTICO</code>).</li>
+      <li>SEC mapping uses company_tickers.json → CIK → companyfacts (EDGAR). Netlify proxy prefilled.</li>
+      <li>ΔEBITDA% = −α₁·ΔCPI − α₂·OAS/100 − α₃·max(0, −GDP) ± oilSensitivity·ΔOil.</li>
       <li>ΔInterest% = (1 − rateHedge)·[β₁·ΔFedFunds + β₂·OAS/100]. ICR = EBITDA / Interest.</li>
       <li>PD = σ(θ₀ + θ₁·Leverage + θ₂/ICR + θ₃·OAS + θ₄·RecessionDummy − θ₅·creditHedge).</li>
-      <li>Optimizer: coarse grid over allocations, picks feasible mix with highest Sharpe-like proxy.</li>
     </ul>
+    <details class="mt"><summary class="sub">Netlify Function (save as <code>netlify/functions/sec.js</code>)</summary>
+      <code class="block">export const handler = async (event) =&gt; {\n  const target = event.queryStringParameters?.url;\n  if (!target) return { statusCode: 400, body: 'Missing url param' };\n  const ua = process.env.SEC_USER_AGENT || 'CreditStressGame/1.0 (vpd1@fordham.edu)';\n  try{\n    const res = await fetch(target, { headers: { 'User-Agent': ua, 'Accept':'application/json' } });\n    const body = await res.text();\n    return {\n      statusCode: res.status,\n      headers: { 'Content-Type': res.headers.get('Content-Type') || 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' },\n      body\n    };\n  }catch(e){\n    return { statusCode: 500, body: 'Proxy error: '+e.message };\n  }\n};</code>
+    </details>
+    <details class="mt"><summary class="sub">Cloudflare Worker (optional)</summary>
+      <code class="block">export default {\n  async fetch(request, env) {\n    const url = new URL(request.url);\n    const target = url.searchParams.get('url');\n    if (!target) return new Response('Missing url param', { status: 400 });\n    const ua = env.SEC_USER_AGENT || 'CreditStressGame/1.0 (vpd1@fordham.edu)';\n    const res = await fetch(target, { headers: { 'User-Agent': ua, 'Accept': 'application/json' } });\n    return new Response(res.body, { status: res.status, headers: { 'Content-Type': res.headers.get('Content-Type') || 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' } });\n  }\n}</code>
+    </details>
   </div>
 </div>
 
 <script>
 /************** CONFIG **************/
-const FRED_API_KEY = "0aecc3398de3f805726545f04b2c6039"; // your key
-const FRED = { ff:"FEDFUNDS", cpi:"CPIAUCSL", gdp:"A191RL1Q225SBEA", oas:"BAMLH0A0HYM2", oil:"DCOILWTICO" };
-
-// Default sectors (add/edit as needed)
-const DEFAULT_SECTORS = [
-  {name:"Packaging",         alloc:20, lev:3.0, ebitda:18, rate:6.0, oil:0.2, cyc:0.4},
-  {name:"Oilfield Services", alloc:20, lev:2.8, ebitda:17, rate:7.0, oil:1.0, cyc:0.7},
-  {name:"Retail",            alloc:20, lev:3.8, ebitda:12, rate:8.0, oil:0.1, cyc:0.8},
-  {name:"REITs",             alloc:20, lev:5.5, ebitda:58, rate:5.5, oil:0.0, cyc:0.6},
-  {name:"Tech (HW)",         alloc:20, lev:1.6, ebitda:22, rate:5.0, oil:0.0, cyc:0.5},
-];
-
-// Sensitivity coefficients
-const COEFF = {
-  alphaCPI: 0.30,   // EBITDA% per +1pp CPI beyond 2%
-  alphaOAS: 0.12,   // EBITDA% per +100bps OAS
-  alphaGDP: 0.45,   // EBITDA% hit per -1pp GDP (only when GDP<0)
-  alphaOIL: 0.08,   // EBITDA% per $10/bbl change * oil sensitivity
-  betaFF:   0.55,   // interest pass-through from FF
-  betaOAS:  0.20,   // interest pass-through from OAS (100bps)
-  // PD logistic weights
-  theta0: -4.2,
-  thetaLev: 0.33,
-  thetaICRInv: 0.95,
-  thetaOAS: 0.002,
-  thetaRecession: 0.8,
-  thetaHedge: 0.015 // per 1% credit hedge (reduces risk)
+window.APP_CONFIG = {
+  // FRED API key
+  FRED_API_KEY: "0aecc3398de3f805726545f04b2c6039",
+  FRED_SERIES: { ff: "FEDFUNDS", cpi: "CPIAUCSL", gdp: "A191RL1Q225SBEA", oas: "BAMLH0A0HYM2", oil: "DCOILWTICO" },
+  // PREFILLED to Netlify default path. If you deploy on Netlify, this just works.
+  SEC_PROXY_URL: "/.netlify/functions/sec",
+  // Your SEC identification (used by proxy)
+  SEC_USER_ID: "CreditStressGame/1.0 (vpd1@fordham.edu)"
 };
 
-/************** STATE **************/
-let sectors = JSON.parse(JSON.stringify(DEFAULT_SECTORS));
-let live = { ff:5.25, cpiYoY:3.0, gdp:1.8, oas:350, oil:80 };
-
-/************** UTIL **************/
-const $ = s=>document.querySelector(s);
-function clamp(x,a,b){return Math.min(b,Math.max(a,x));}
-function sigmoid(z){return 1/(1+Math.exp(-z));}
-function toCsv(rows){ return rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\n"); }
-
-/************** FRED **************/
-async function fredLatest(series, limit=2){
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=${limit}`;
-  const r = await fetch(url, {cache:'no-store'});
-  if(!r.ok) throw new Error(`${series} fetch ${r.status}`);
-  const j = await r.json();
-  const obs = (j.observations||[]).filter(o=>o.value!=='.').map(o=>parseFloat(o.value));
-  if(!obs.length) throw new Error(`${series} empty`);
-  return obs; // newest first
-}
-async function getCpiYoY(){
-  const v = await fredLatest(FRED.cpi, 13);
-  const latest = v[0], prev12 = v[v.length-1] ?? latest; return ((latest/prev12)-1)*100;
-}
-async function loadLive(){
-  const status = $('#status'); status.textContent='Fetching live macros from FRED…';
-  try{
-    const [[ff],[gdp],[oas],[oil], cpiYoY] = await Promise.all([
-      fredLatest(FRED.ff), fredLatest(FRED.gdp), fredLatest(FRED.oas), fredLatest(FRED.oil), getCpiYoY()
-    ]);
-    live.ff = ff; live.gdp = gdp; live.cpiYoY = cpiYoY;
-    live.oas = (oas < 20 ? oas*100 : oas); // normalize to bps if needed
-    live.oil = oil; status.textContent='Live macros loaded ✓';
-  }catch(e){
-    console.warn(e); status.style.color='#f7c948'; status.textContent='Live pull failed — using offline defaults. Toggle off "Use live FRED data" to avoid fetch.'; $('#useLive').checked=false;
-  }
-}
-
-/************** TABLE UI **************/
-function buildSectorTable(){
-  const tb = $('#sectorTable tbody'); tb.innerHTML='';
-  sectors.forEach((s,i)=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML = `
-      <td>${s.name}</td>
-      <td class="right"><input type="number" data-i="${i}" data-k="alloc" value="${s.alloc}" min="0" max="100" step="1" style="width:80px"></td>
-      <td class="right"><input type="number" data-i="${i}" data-k="lev" value="${s.lev}" min="0" max="10" step="0.1" style="width:80px"></td>
-      <td class="right"><input type="number" data-i="${i}" data-k="ebitda" value="${s.ebitda}" min="0" max="80" step="0.5" style="width:80px"></td>
-      <td class="right"><input type="number" data-i="${i}" data-k="rate" value="${s.rate}" min="0" max="20" step="0.1" style="width:90px"></td>
-      <td class="right"><input type="number" data-i="${i}" data-k="oil" value="${s.oil}" min="0" max="1" step="0.1" style="width:70px"></td>
-      <td class="right"><input type="number" data-i="${i}" data-k="cyc" value="${s.cyc}" min="0" max="1" step="0.1" style="width:70px"></td>
-    `;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('input').forEach(el=> el.addEventListener('input', e=>{
-    const i=+e.target.dataset.i, k=e.target.dataset.k; sectors[i][k]=+e.target.value; update();
-  }));
-}
-function normalizeAlloc(){
-  const tot=sectors.reduce((a,b)=>a+b.alloc,0); if(tot===0){sectors.forEach(s=>s.alloc=100/sectors.length);return}
-  sectors.forEach(s=> s.alloc = +(s.alloc/tot*100).toFixed(1));
-}
-
 /************** MODEL **************/
-function sectorYieldPct(baseRate, oasBps, lev){
-  const spread = (oasBps/100) * (0.7 + 0.05*lev); // pp
-  return Math.max(0, baseRate + spread);
-}
-function ratingFromPD(pd){ // pd in %
-  if(pd<1) return 'AAA'; if(pd<2) return 'AA'; if(pd<3) return 'A'; if(pd<5) return 'BBB'; if(pd<8) return 'BB'; if(pd<12) return 'B'; return 'CCC/D';
-}
-
-function effectiveMacros(){
-  const useLive = $('#useLive').checked; const yt = +$('#yieldTarget').value;
-  const ff = (useLive? live.ff:3.5) + +$('#ffOffset').value;
-  const cpi = (useLive? live.cpiYoY:3.0) + +$('#cpiOffset').value;
-  const gdp = (useLive? live.gdp:1.5) + +$('#gdpOffset').value;
-  const oas = (useLive? live.oas:350) + +$('#oasOffset').value;
-  const oil = (useLive? live.oil:80) + +$('#oilOffset').value;
-  $('#ffVal').textContent = ff.toFixed(2)+'%';
-  $('#cpiVal').textContent = cpi.toFixed(2)+'%';
-  $('#gdpVal').textContent = gdp.toFixed(2)+'%';
-  $('#oasVal').textContent = Math.round(oas)+' bps';
-  $('#oilVal').textContent = '$'+oil.toFixed(0);
-  $('#rateHedgeVal').textContent = $('#rateHedge').value+'%';
-  $('#comHedgeVal').textContent = $('#comHedge').value+'%';
-  $('#creditHedgeVal').textContent = $('#creditHedge').value+'%';
-  return {ff,cpi,gdp,oas,oil,yt};
-}
-
-function simulate(){
-  const {ff,cpi,gdp,oas,oil,yt} = effectiveMacros();
-  const rateHedge = +$('#rateHedge').value/100; // 0..1
-  const comHedge  = +$('#comHedge').value/100;  // 0..1 (for energy oil sensitivity)
-  const credHedge = +$('#creditHedge').value;   // % points
-
-  let wYield=0,wPD=0,wLoss=0; const rf = ff; const rows=[];
-  sectors.forEach(s=>{
-    const alloc = s.alloc/100;
-
-    // EBITDA adjustment
-    const dCpi = (cpi-2.0);
-    const dEbitdaCPI = COEFF.alphaCPI * dCpi;
-    const dEbitdaOAS = COEFF.alphaOAS * (oas/100);
-    const dEbitdaGDP = COEFF.alphaGDP * Math.max(0,-gdp);
-    const dEbitdaOIL = COEFF.alphaOIL * ((oil - 80)/10) * s.oil * (1 - comHedge); // baseline 80$/bbl
-    const adjEbitdaPct = clamp(s.ebitda - dEbitdaCPI - dEbitdaOAS - dEbitdaGDP + dEbitdaOIL, 0, 80);
-
-    // Interest adjustment with rate hedge
-    const dRate = (1-rateHedge) * (COEFF.betaFF*(ff-2.0) + COEFF.betaOAS*(oas/100));
-    const adjRate = Math.max(0, s.rate + dRate);
-
-    // ICR proxy
-    const icr = Math.max(0.1, (adjEbitdaPct/100) / ((s.lev||0.1) * (adjRate/100)) * 10);
-
-    // Yield & PD
-    const yld = sectorYieldPct(adjRate, oas*(1 - credHedge/100), s.lev);
-    const z = COEFF.theta0 + COEFF.thetaLev*s.lev + COEFF.thetaICRInv*(1/Math.max(0.1,icr)) + COEFF.thetaOAS*oas + (gdp<0? COEFF.thetaRecession:0) - COEFF.thetaHedge*credHedge;
-    const pd = clamp(sigmoid(z), 0.001, 0.40);
-
-    const loss = pd * yld * 100; // bps
-
-    wYield += alloc*yld;
-    wPD += alloc*pd*100;
-    wLoss += alloc*loss;
-
-    rows.push({sector:s.name, alloc:s.alloc, ebitda:adjEbitdaPct, icr, yield:yld, pd:pd*100, loss});
-  });
-
-  const bench = rf + (effectiveMacros().oas/100); // pp
-  const irrAlpha = wYield - bench; // pp
-
-  $('#kpiYield').textContent = wYield.toFixed(2)+'%';
-  $('#kpiPD').textContent = wPD.toFixed(2)+'%';
-  $('#kpiIRR').textContent = (irrAlpha>=0?'+':'') + irrAlpha.toFixed(2)+'%';
-  const win = (wPD < 5 && wYield >= yt);
-  $('#kpiStatus').innerHTML = win? '<span class="good">WIN ✓</span>' : '<span class="bad">Try Again</span>';
-  $('#rating').textContent = ratingFromPD(wPD);
-
-  // table
-  const tb=$('#outTable tbody'); tb.innerHTML='';
-  rows.forEach(r=>{
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${r.sector}</td><td class="right">${r.alloc.toFixed(0)}%</td><td class="right">${r.ebitda.toFixed(1)}%</td><td class="right">${r.icr.toFixed(2)}x</td><td class="right">${r.yield.toFixed(2)}%</td><td class="right">${r.pd.toFixed(2)}%</td><td class="right">${r.loss.toFixed(0)}</td>`;
-    tb.appendChild(tr);
-  });
-
-  // chart
-  drawChart(rows.map(r=>r.sector), rows.map(r=>r.pd), rows.map(r=>r.yield));
-  return {wYield,wPD,irrAlpha,rows};
-}
-
-/************** OPTIMIZER **************/
-function suggestOptimal(){
-  const step = 20; let best=null; const old=sectors.map(s=>s.alloc);
-  for(let a0=0;a0<=100;a0+=step){for(let a1=0;a1<=100-a0;a1+=step){for(let a2=0;a2<=100-a0-a1;a2+=step){for(let a3=0;a3<=100-a0-a1-a2;a3+=step){
-    const a4 = 100-a0-a1-a2-a3; [sectors[0].alloc,sectors[1].alloc,sectors[2].alloc,sectors[3].alloc,sectors[4].alloc]=[a0,a1,a2,a3,a4];
-    const r = simulate(); const yt=+$('#yieldTarget').value; const feas=(r.wPD<5 && r.wYield>=yt);
-    if(feas){ if(!best || r.irrAlpha>best.irrAlpha) best={irrAlpha:r.irrAlpha, allocs:[a0,a1,a2,a3,a4]}; }
-  }}}}
-  if(best){ [sectors[0].alloc,sectors[1].alloc,sectors[2].alloc,sectors[3].alloc,sectors[4].alloc] = best.allocs; buildSectorTable(); simulate(); alert('Applied suggested mix (coarse search).'); }
-  else alert('No feasible mix under current macros. Ease stress or raise hedges.');
-  // restore old? We keep best or current; user can Reset if needed.
-}
-
-/************** CHART **************/
-let chart;
-function drawChart(labels,pd,yld){
-  const c=document.getElementById('chart'); if(typeof Chart==='undefined'||!c){ const s=$('#status'); if(s){s.style.color='#f7c948'; s.textContent='Chart library blocked — table still works.';} return; }
-  if(chart) chart.destroy();
-  chart = new Chart(c, { type:'bar', data:{ labels, datasets:[{label:'PD (1y) %', data:pd},{label:'Yield %', data:yld}] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:'#cfe0ff'}}}, scales:{x:{ticks:{color:'#cfe0ff'},grid:{color:'#1d2a48'}}, y:{ticks:{color:'#cfe0ff'},grid:{color:'#1d2a48'}}}} });
-}
-
-/************** EXPORT & SHARE **************/
-function exportCsv(){
-  const {rows} = simulate();
-  const head=["Sector","Alloc %","Adj EBITDA %","Adj ICR (x)","Yield %","PD (1y) %","Loss (bps)"];
-  const data=rows.map(r=>[r.sector,r.alloc.toFixed(1),r.ebitda.toFixed(1),r.icr.toFixed(2),r.yield.toFixed(2),r.pd.toFixed(2),r.loss.toFixed(0)]);
-  const csv = toCsv([head,...data]); const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='sector_stress_results.csv'; a.click(); URL.revokeObjectURL(url);
-}
-function shareLink(){
-  const p=new URLSearchParams(); sectors.forEach((s,i)=>{p.set(`a${i}`,s.alloc);p.set(`l${i}`,s.lev);p.set(`e${i}`,s.ebitda);p.set(`r${i}`,s.rate);p.set(`o${i}`,s.oil);p.set(`c${i}`,s.cyc)});
-  const m=effectiveMacros(); p.set('ff',m.ff.toFixed(2)); p.set('cpi',m.cpi.toFixed(2)); p.set('gdp',m.gdp.toFixed(2)); p.set('oas',Math.round(m.oas)); p.set('oil',Math.round(m.oil)); p.set('yt',m.yt.toFixed(2));
-  const link = location.origin+location.pathname+'?'+p.toString(); navigator.clipboard.writeText(link).then(()=>alert('Link copied!')).catch(()=>prompt('Copy link:',link));
-}
-function loadFromQuery(){
-  const q=new URLSearchParams(location.search); if(q.size===0) return; sectors.forEach((s,i)=>{ s.alloc=+(q.get(`a${i}`)??s.alloc); s.lev=+(q.get(`l${i}`)??s.lev); s.ebitda=+(q.get(`e${i}`)??s.ebitda); s.rate=+(q.get(`r${i}`)??s.rate); s.oil=+(q.get(`o${i}`)??s.oil); s.cyc=+(q.get(`c${i}`)??s.cyc); });
-}
-
-/************** INIT **************/
 (function(){
-  try{
-    loadFromQuery(); buildSectorTable(); normalizeAlloc(); buildSectorTable();
+  const COEFF = { alphaCPI:0.30, alphaOAS:0.12, alphaGDP:0.45, alphaOIL:0.08, betaFF:0.55, betaOAS:0.20, theta0:-4.2, thetaLev:0.33, thetaICRInv:0.95, thetaOAS:0.002, thetaRecession:0.8, thetaHedge:0.015 };
+  function clamp(x,a,b){return Math.min(b,Math.max(a,x));}
+  function sigmoid(z){return 1/(1+Math.exp(-z));}
+  function sectorYieldPct(baseRate, oasBps, lev){ const spread=(oasBps/100)*(0.7+0.05*lev); return Math.max(0, baseRate+spread); }
+  function ratingFromPD(pd){ if(pd<1) return 'AAA'; if(pd<2) return 'AA'; if(pd<3) return 'A'; if(pd<5) return 'BBB'; if(pd<8) return 'BB'; if(pd<12) return 'B'; return 'CCC/D'; }
+  window.Model = { COEFF, clamp, sigmoid, sectorYieldPct, ratingFromPD };
+})();
 
-    ["#ffOffset","#cpiOffset","#gdpOffset","#oasOffset","#oilOffset","#useLive","#rateHedge","#comHedge","#creditHedge","#yieldTarget"].forEach(sel=> $(sel).addEventListener('input', ()=> simulate()));
-    $('#simulateBtn').addEventListener('click', ()=>{ try{ simulate(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Simulation error: '+e.message;} console.error(e);} });
-    $('#optimizeBtn').addEventListener('click', ()=>{ try{ suggestOptimal(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Optimizer error: '+e.message;} console.error(e);} });
-    $('#rebalanceBtn').addEventListener('click', ()=>{ try{ normalizeAlloc(); buildSectorTable(); simulate(); }catch(e){ const s=$('#status'); if(s){s.style.color:'#ff9aa2'; s.textContent='Rebalance error: '+e.message;} console.error(e);} });
-    $('#resetBtn').addEventListener('click', ()=>{ try{ sectors=JSON.parse(JSON.stringify(DEFAULT_SECTORS)); buildSectorTable(); simulate(); }catch(e){ const s=$('#status'); if(s){s.style.color:'#ff9aa2'; s.textContent='Reset error: '+e.message;} console.error(e);} });
-    $('#exportBtn').addEventListener('click', ()=>{ try{ exportCsv(); }catch(e){ const s=$('#status'); if(s){s.style.color:'#ff9aa2'; s.textContent='Export error: '+e.message;} console.error(e);} });
-    $('#shareBtn').addEventListener('click', ()=>{ try{ shareLink(); }catch(e){ const s=$('#status'); if(s){s.style.color:'#ff9aa2'; s.textContent='Share error: '+e.message;} console.error(e);} });
+/************** UI + FRED + SEC HELPERS **************/
+(function(){
+  const $ = s=>document.querySelector(s);
+  const toCsv = rows => rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(",")).join("\n");
 
-    if($('#useLive').checked){ loadLive().then(()=>simulate()); } else { simulate(); }
-  }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Init error: '+e.message;} console.error(e); }
+  async function fredLatest(series, limit=2){
+    const key = window.APP_CONFIG.FRED_API_KEY;
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${key}&file_type=json&sort_order=desc&limit=${limit}`;
+    const r = await fetch(url, {cache:'no-store'});
+    if(!r.ok) throw new Error(`${series} fetch ${r.status}`);
+    const j = await r.json();
+    const obs = (j.observations||[]).filter(o=>o.value!=='.').map(o=>parseFloat(o.value));
+    if(!obs.length) throw new Error(`${series} empty`);
+    return obs; // newest first
+  }
+  async function getCpiYoY(){ const v=await fredLatest(window.APP_CONFIG.FRED_SERIES.cpi,13); const latest=v[0], prev12=v[v.length-1]??latest; return ((latest/prev12)-1)*100; }
+  async function loadLive(){ const status=$('#status'); status.textContent='Fetching live macros from FRED…'; try{ const S=window.APP_CONFIG.FRED_SERIES; const [[ff],[gdp],[oas],[oil], cpiYoY] = await Promise.all([ fredLatest(S.ff), fredLatest(S.gdp), fredLatest(S.oas), fredLatest(S.oil), getCpiYoY() ]); const live={ ff, gdp, cpiYoY, oas:(oas<20? oas*100:oas), oil }; status.textContent='Live macros loaded ✓'; return live; }catch(e){ console.warn(e); const status=$('#status'); status.style.color='#f7c948'; status.textContent='Live pull failed — using offline defaults. Toggle off "Use live FRED data" to avoid fetch.'; $('#useLive').checked=false; return null; } }
+
+  // SEC mapping: ticker -> CIK -> companyfacts (via proxy)
+  async function getCIKForTicker(ticker){ const url = "https://www.sec.gov/files/company_tickers.json"; const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error("SEC ticker list fetch failed "+r.status); const j = await r.json(); ticker=ticker.toUpperCase(); for(const k in j){ if(j[k].ticker===ticker) return String(j[k].cik_str).padStart(10,'0'); } throw new Error('Ticker not found in SEC list'); }
+  async function fetchCompanyFacts(cik){ const proxy=window.APP_CONFIG.SEC_PROXY_URL||""; const base=`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`; const url = proxy? `${proxy}?url=${encodeURIComponent(base)}`:base; const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error('SEC facts fetch failed '+r.status); return await r.json(); }
+  function latestUSDFact(facts, key){ const f=facts?.facts?.["us-gaap"]?.[key]; const arr=f?.units?.USD; if(!Array.isArray(arr)||arr.length===0) return null; for(let i=arr.length-1;i>=0;i--){ const v=arr[i]?.val; if(typeof v==='number') return v; } return null; }
+  async function fetchTickerSEC(t){ const cik=await getCIKForTicker(t); const facts=await fetchCompanyFacts(cik); const rev = latestUSDFact(facts,'Revenues') ?? latestUSDFact(facts,'SalesRevenueNet'); const opInc = latestUSDFact(facts,'OperatingIncomeLoss'); const intExp = latestUSDFact(facts,'InterestExpense'); const debt = latestUSDFact(facts,'Liabilities'); const da = latestUSDFact(facts,'DepreciationDepletionAndAmortization') || 0; const ebitda = (opInc||0) + da; const ebitdaMargin = (rev && ebitda) ? (ebitda/rev)*100 : 15; let lev; if(debt && ebitda && Math.abs(ebitda)>1e-6){ lev = debt/ebitda; } else { lev = 3.0; } let rate; if(debt && intExp && debt>0){ rate = (intExp/debt)*100; } else { rate = 6.0; } return { lev: Math.max(0.1, Math.min(10, lev)), ebitda: Math.max(5, Math.min(60, ebitdaMargin)), rate: Math.max(1, Math.min(20, rate)) } }
+
+  function applyScenarioPreset(name){ const map={ soft:{ff:-0.50,cpi:-0.50,gdp:+0.5,oas:-50, oil:0,  hedges:{rate:10,com:0, cred:0}}, mild:{ff:-0.75,cpi:-0.75,gdp:-1.0,oas:+100, oil:-5, hedges:{rate:20,com:0, cred:10}}, oilshock:{ff:+0.25,cpi:+1.0,gdp:-0.5,oas:+75, oil:+20, hedges:{rate:0, com:40, cred:5}}, credit:{ff:0.0,  cpi:+0.25,gdp:-1.5,oas:+200, oil:0,  hedges:{rate:30,com:0, cred:20}} }; return map[name] || null; }
+
+  function buildSectorTable(sectors,onChange){ const tb=$('#sectorTable tbody'); tb.innerHTML=''; sectors.forEach((s,i)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${s.name}</td><td class="right"><input type="number" data-i="${i}" data-k="alloc" value="${s.alloc}" min="0" max="100" step="1" style="width:80px"></td><td class="right"><input type="number" data-i="${i}" data-k="lev" value="${s.lev}" min="0" max="10" step="0.1" style="width:80px"></td><td class="right"><input type="number" data-i="${i}" data-k="ebitda" value="${s.ebitda}" min="0" max="80" step="0.5" style="width:80px"></td><td class="right"><input type="number" data-i="${i}" data-k="rate" value="${s.rate}" min="0" max="20" step="0.1" style="width:90px"></td><td class="right"><input type="number" data-i="${i}" data-k="oil" value="${s.oil}" min="0" max="1" step="0.1" style="width:70px"></td><td class="right"><input type="number" data-i="${i}" data-k="cyc" value="${s.cyc}" min="0" max="1" step="0.1" style="width:70px"></td>`; tb.appendChild(tr); }); tb.querySelectorAll('input').forEach(el=> el.addEventListener('input', e=>{ const i=+e.target.dataset.i, k=e.target.dataset.k; onChange(i,k,+e.target.value); })); }
+  function drawChart(labels,pd,yld){ const c=document.getElementById('chart'); if(typeof Chart==='undefined'||!c){ const s=$('#status'); if(s){s.style.color='#f7c948'; s.textContent='Chart library blocked — table still works.';} return; } if(window._chart) window._chart.destroy(); window._chart = new Chart(c,{ type:'bar', data:{ labels, datasets:[{label:'PD (1y) %', data:pd},{label:'Yield %', data:yld}] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:'#cfe0ff'}}}, scales:{x:{ticks:{color:'#cfe0ff'},grid:{color:'#1d2a48'}}, y:{ticks:{color:'#cfe0ff'},grid:{color:'#1d2a48'}}}} }); }
+  function exportCsv(rows){ const head=["Sector","Alloc %","Adj EBITDA %","Adj ICR (x)","Yield %","PD (1y) %","Loss (bps)"]; const data=rows.map(r=>[r.sector,r.alloc.toFixed(1),r.ebitda.toFixed(1),r.icr.toFixed(2),r.yield.toFixed(2),r.pd.toFixed(2),r.loss.toFixed(0)]); const csv=toCsv([head,...data]); const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='sector_stress_results.csv'; a.click(); URL.revokeObjectURL(url); }
+  function shareLink(sectors, macros){ const p=new URLSearchParams(); sectors.forEach((s,i)=>{p.set(`a${i}`,s.alloc);p.set(`l${i}`,s.lev);p.set(`e${i}`,s.ebitda);p.set(`r${i}`,s.rate);p.set(`o${i}`,s.oil);p.set(`c${i}`,s.cyc)}); p.set('ff',macros.ff.toFixed(2)); p.set('cpi',macros.cpi.toFixed(2)); p.set('gdp',macros.gdp.toFixed(2)); p.set('oas',Math.round(macros.oas)); p.set('oil',Math.round(macros.oil)); p.set('yt',macros.yt.toFixed(2)); const link=location.origin+location.pathname+'?'+p.toString(); navigator.clipboard.writeText(link).then(()=>alert('Link copied!')).catch(()=>prompt('Copy link:',link)); }
+
+  window.UI = { $, loadLive, buildSectorTable, drawChart, exportCsv, shareLink, fetchTickerSEC, applyScenarioPreset };
+})();
+
+/************** APP **************/
+(function(){
+  const {$, loadLive, buildSectorTable, drawChart, exportCsv, shareLink} = window.UI;
+  const {COEFF, clamp, sigmoid, sectorYieldPct, ratingFromPD} = window.Model;
+
+  let sectors = [
+    {name:"Packaging",         alloc:20, lev:3.0, ebitda:18, rate:6.0, oil:0.2, cyc:0.4},
+    {name:"Oilfield Services", alloc:20, lev:2.8, ebitda:17, rate:7.0, oil:1.0, cyc:0.7},
+    {name:"Retail",            alloc:20, lev:3.8, ebitda:12, rate:8.0, oil:0.1, cyc:0.8},
+    {name:"REITs",             alloc:20, lev:5.5, ebitda:58, rate:5.5, oil:0.0, cyc:0.6},
+    {name:"Tech (HW)",         alloc:20, lev:1.6, ebitda:22, rate:5.0, oil:0.0, cyc:0.5},
+  ];
+
+  let live = { ff:5.25, cpiYoY:3.0, gdp:1.8, oas:350, oil:80 };
+
+  function normalizeAlloc(){ const tot=sectors.reduce((a,b)=>a+b.alloc,0); if(tot===0){sectors.forEach(s=>s.alloc=100/sectors.length);return} sectors.forEach(s=> s.alloc = +(s.alloc/tot*100).toFixed(1)); }
+  function effectiveMacros(){ const useLive=$('#useLive').checked; const yt=+$('#yieldTarget').value; const ff=(useLive? live.ff:3.5)+ +$('#ffOffset').value; const cpi=(useLive? live.cpiYoY:3.0)+ +$('#cpiOffset').value; const gdp=(useLive? live.gdp:1.5)+ +$('#gdpOffset').value; const oas=(useLive? live.oas:350)+ +$('#oasOffset').value; const oil=(useLive? live.oil:80)+ +$('#oilOffset').value; $('#ffVal').textContent=ff.toFixed(2)+'%'; $('#cpiVal').textContent=cpi.toFixed(2)+'%'; $('#gdpVal').textContent=gdp.toFixed(2)+'%'; $('#oasVal').textContent=Math.round(oas)+' bps'; $('#oilVal').textContent='$'+oil.toFixed(0); $('#rateHedgeVal').textContent=$('#rateHedge').value+'%'; $('#comHedgeVal').textContent=$('#comHedge').value+'%'; $('#creditHedgeVal').textContent=$('#creditHedge').value+'%'; return {ff,cpi,gdp,oas,oil,yt}; }
+
+  function simulate(){ const {ff,cpi,gdp,oas,oil,yt}=effectiveMacros(); const rateHedge=+$('#rateHedge').value/100; const comHedge=+$('#comHedge').value/100; const credHedge=+$('#creditHedge').value; let wYield=0,wPD=0,wLoss=0; const rf=ff; const rows=[]; sectors.forEach(s=>{ const alloc=s.alloc/100; const dCpi=(cpi-2.0); const dEbitdaCPI=COEFF.alphaCPI*dCpi; const dEbitdaOAS=COEFF.alphaOAS*(oas/100); const dEbitdaGDP=COEFF.alphaGDP*Math.max(0,-gdp); const dEbitdaOIL=COEFF.alphaOIL*((oil-80)/10)*s.oil*(1-comHedge); const adjEbitdaPct=clamp(s.ebitda - dEbitdaCPI - dEbitdaOAS - dEbitdaGDP + dEbitdaOIL, 0, 80); const dRate=(1-rateHedge)*(COEFF.betaFF*(ff-2.0)+COEFF.betaOAS*(oas/100)); const adjRate=Math.max(0, s.rate + dRate); const icr=Math.max(0.1, (adjEbitdaPct/100) / ((s.lev||0.1)*(adjRate/100)) * 10); const yld=sectorYieldPct(adjRate, oas*(1-credHedge/100), s.lev); const z=COEFF.theta0 + COEFF.thetaLev*s.lev + COEFF.thetaICRInv*(1/Math.max(0.1,icr)) + COEFF.thetaOAS*oas + (gdp<0? COEFF.thetaRecession:0) - COEFF.thetaHedge*credHedge; const pd=Math.min(0.40, Math.max(0.001, 1/(1+Math.exp(-z)))); const loss=pd*yld*100; wYield+=alloc*yld; wPD+=alloc*pd*100; wLoss+=alloc*loss; rows.push({sector:s.name, alloc:s.alloc, ebitda:adjEbitdaPct, icr, yield:yld, pd:pd*100, loss}); }); const bench=rf+(oas/100); const irrAlpha=wYield-bench; $('#kpiYield').textContent=wYield.toFixed(2)+'%'; $('#kpiPD').textContent=wPD.toFixed(2)+'%'; $('#kpiIRR').textContent=(irrAlpha>=0?'+':'')+irrAlpha.toFixed(2)+'%'; const win=(wPD<5 && wYield>=yt); $('#kpiStatus').innerHTML=win? '<span class="good">WIN ✓</span>' : '<span class="bad">Try Again</span>'; $('#rating').textContent=ratingFromPD(wPD); const tb=$('#outTable tbody'); tb.innerHTML=''; rows.forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.sector}</td><td class="right">${r.alloc.toFixed(0)}%</td><td class="right">${r.ebitda.toFixed(1)}%</td><td class="right">${r.icr.toFixed(2)}x</td><td class="right">${r.yield.toFixed(2)}%</td><td class="right">${r.pd.toFixed(2)}%</td><td class="right">${r.loss.toFixed(0)}</td>`; tb.appendChild(tr); }); drawChart(rows.map(r=>r.sector), rows.map(r=>r.pd), rows.map(r=>r.yield)); return {wYield,wPD,irrAlpha,rows}; }
+
+  function suggestOptimal(){ const step=20; let best=null; for(let a0=0;a0<=100;a0+=step){ for(let a1=0;a1<=100-a0;a1+=step){ for(let a2=0;a2<=100-a0-a1;a2+=step){ for(let a3=0;a3<=100-a0-a1-a2;a3+=step){ const a4=100-a0-a1-a2-a3; const old=sectors.map(s=>s.alloc); [sectors[0].alloc,sectors[1].alloc,sectors[2].alloc,sectors[3].alloc,sectors[4].alloc]=[a0,a1,a2,a3,a4]; const r=simulate(); const yt=+$('#yieldTarget').value; const feas=(r.wPD<5 && r.wYield>=yt); if(feas){ if(!best || r.irrAlpha>best.irrAlpha) best={irrAlpha:r.irrAlpha, allocs:[a0,a1,a2,a3,a4]}; } [sectors[0].alloc,sectors[1].alloc,sectors[2].alloc,sectors[3].alloc,sectors[4].alloc]=old; }}}} if(best){ [sectors[0].alloc,sectors[1].alloc,sectors[2].alloc,sectors[3].alloc,sectors[4].alloc]=best.allocs; buildSectorTable(sectors, onSectorChange); simulate(); alert('Applied suggested mix (coarse search).'); } else { alert('No feasible mix under current macros. Ease stress or raise hedges.'); } }
+
+  function onSectorChange(i,k,val){ sectors[i][k]=val; update(); }
+  function update(){ normalizeAlloc(); buildSectorTable(sectors, onSectorChange); simulate(); }
+  function loadFromQuery(){ const q=new URLSearchParams(location.search); if(q.size===0) return; sectors.forEach((s,i)=>{ s.alloc=+(q.get(`a${i}`)??s.alloc); s.lev=+(q.get(`l${i}`)??s.lev); s.ebitda=+(q.get(`e${i}`)??s.ebitda); s.rate=+(q.get(`r${i}`)??s.rate); s.oil=+(q.get(`o${i}`)??s.oil); s.cyc=+(q.get(`c${i}`)??s.cyc); }); }
+
+  function populateSectorDropdown(){ const sel=$('#mapSector'); sel.innerHTML=''; sectors.forEach((s,i)=>{ const opt=document.createElement('option'); opt.value=i; opt.textContent=`${i+1}: ${s.name}`; sel.appendChild(opt); }); }
+  async function onFetchTicker(){ const t=($('#tickerInput').value||'').trim().toUpperCase(); const out=$('#tickerStatus'); if(!t){ out.textContent='Enter a ticker first.'; return;} out.textContent='Fetching from SEC…'; try{ let metrics=null; try{ metrics=await window.UI.fetchTickerSEC(t); }catch(e){ out.textContent='SEC fetch failed or blocked — use manual overrides below.'; console.warn(e); return; } $('#ovrLev').value=metrics.lev.toFixed(1); $('#ovrEbitda').value=metrics.ebitda.toFixed(1); $('#ovrRate').value=metrics.rate.toFixed(1); out.textContent=`Loaded ${t} from SEC. Adjust if needed, then click "Apply Overrides".`; }catch(e){ console.error(e); out.textContent='Fetch error: '+e.message; } }
+  function onApplyOverrides(){ const idx=+$('#mapSector').value; if(!(idx>=0)){ $('#tickerStatus').textContent='Pick a sector to map into.'; return;} sectors[idx].lev=+$('#ovrLev').value||sectors[idx].lev; sectors[idx].ebitda=+$('#ovrEbitda').value||sectors[idx].ebitda; sectors[idx].rate=+$('#ovrRate').value||sectors[idx].rate; sectors[idx].oil=+$('#ovrOil').value||sectors[idx].oil; sectors[idx].cyc=+$('#ovrCyc').value||sectors[idx].cyc; buildSectorTable(sectors, onSectorChange); simulate(); $('#tickerStatus').textContent='Applied to '+sectors[idx].name+' ✓'; }
+  function bindScenarioButtons(){ document.querySelectorAll('[data-scn]').forEach(btn=>{ btn.addEventListener('click', ()=>{ const p=window.UI.applyScenarioPreset(btn.dataset.scn); if(!p) return; $('#ffOffset').value=(+$('#ffOffset').value + p.ff).toFixed(2); $('#cpiOffset').value=(+$('#cpiOffset').value + p.cpi).toFixed(2); $('#gdpOffset').value=(+$('#gdpOffset').value + p.gdp).toFixed(2); $('#oasOffset').value=(+$('#oasOffset').value + p.oas).toFixed(0); $('#oilOffset').value=(+$('#oilOffset').value + p.oil).toFixed(0); $('#rateHedge').value=Math.min(100, +$('#rateHedge').value + p.hedges.rate); $('#comHedge').value=Math.min(100, +$('#comHedge').value + p.hedges.com); $('#creditHedge').value=Math.min(50, +$('#creditHedge').value + p.hedges.cred); simulate(); }); }); }
+
+  async function init(){ try{ loadFromQuery(); buildSectorTable(sectors, onSectorChange); normalizeAlloc(); buildSectorTable(sectors, onSectorChange); ["#ffOffset","#cpiOffset","#gdpOffset","#oasOffset","#oilOffset","#useLive","#rateHedge","#comHedge","#creditHedge","#yieldTarget","#tickerInput"].forEach(sel=> $(sel).addEventListener('input', ()=> simulate())); $('#simulateBtn').addEventListener('click', ()=>{ try{ simulate(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Simulation error: '+e.message;} console.error(e);} }); $('#optimizeBtn').addEventListener('click', ()=>{ try{ suggestOptimal(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Optimizer error: '+e.message;} console.error(e);} }); $('#rebalanceBtn').addEventListener('click', ()=>{ try{ normalizeAlloc(); buildSectorTable(sectors, onSectorChange); simulate(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Rebalance error: '+e.message;} console.error(e);} }); $('#resetBtn').addEventListener('click', ()=>{ try{ sectors=[ {name:"Packaging",alloc:20,lev:3.0,ebitda:18,rate:6.0,oil:0.2,cyc:0.4}, {name:"Oilfield Services",alloc:20,lev:2.8,ebitda:17,rate:7.0,oil:1.0,cyc:0.7}, {name:"Retail",alloc:20,lev:3.8,ebitda:12,rate:8.0,oil:0.1,cyc:0.8}, {name:"REITs",alloc:20,lev:5.5,ebitda:58,rate:5.5,oil:0.0,cyc:0.6}, {name:"Tech (HW)",alloc:20,lev:1.6,ebitda:22,rate:5.0,oil:0.0,cyc:0.5}, ]; update(); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Reset error: '+e.message;} console.error(e);} }); $('#exportBtn').addEventListener('click', ()=>{ try{ const res=simulate(); exportCsv(res.rows); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Export error: '+e.message;} console.error(e);} }); $('#shareBtn').addEventListener('click', ()=>{ try{ const m=effectiveMacros(); shareLink(sectors,m); }catch(e){ const s=$('#status'); if(s){s.style.color='#ff9aa2'; s.textContent='Share error: '+e.message;} console.error(e);} }); populateSectorDropdown(); bindScenarioButtons(); $('#fetchTickerBtn').addEventListener('click', onFetchTicker); $('#applyOverridesBtn').addEventListener('click', onApplyOverrides); if($('#useLive').checked){ const liveVals=await loadLive(); if(liveVals){ live={ ff:liveVals.ff, cpiYoY:liveVals.cpiYoY, gdp:liveVals.gdp, oas:liveVals.oas, oil:liveVals.oil }; } simulate(); } else { simulate(); } }catch(e){ const s=$('#status'); if(s){ s.style.color='#ff9aa2'; s.textContent='Init error: '+e.message; } console.error(e); } }
+  init();
 })();
 </script>
 </body>
